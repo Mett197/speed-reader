@@ -1,3 +1,10 @@
+### 2026-09-20: 1.4.0-mett
+
+* Add a library to store and browse every imported EPUB or TXT file
+* Track reading progress per book in the library instead of a single global position
+* Extract chapters from EPUB files during import
+* Add a chapter list to jump directly to any chapter
+
 ### 2026-04-25: 1.3.0
 
 * Jump to word position by changing URL hash to `#pos=N`
