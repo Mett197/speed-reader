@@ -18,6 +18,9 @@ import {
   BookOpen,
   Eye,
   EyeOff,
+  Library,
+  List,
+  Trash2,
 } from "lucide-react";
 import JSZip from "jszip";
 
@@ -71,6 +74,40 @@ async function idbGet(key) {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+async function idbDelete(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Library: lightweight metadata for every imported book (no full text here).
+// Each book's full text/chapters live under their own keys so opening the
+// library never has to load every book's content into memory.
+const LIBRARY_KEY = "library";
+
+async function loadLibrary() {
+  try {
+    const lib = await idbGet(LIBRARY_KEY);
+    return Array.isArray(lib) ? lib : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveLibrary(library) {
+  return idbSet(LIBRARY_KEY, library);
+}
+
+function makeBookId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `book-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 // Detect iOS Safari (not in standalone mode)
@@ -128,6 +165,17 @@ function saveSettings(settings) {
   } catch (e) {
     console.error("Failed to save settings:", e);
   }
+}
+
+// Update (or insert) a book's progress in the library list and persist it.
+async function updateLibraryProgress(bookId, currentIndex, totalWords) {
+  if (!bookId) return;
+  const lib = await loadLibrary();
+  const idx = lib.findIndex((b) => b.id === bookId);
+  if (idx === -1) return;
+  lib[idx] = { ...lib[idx], currentIndex, totalWords, lastOpenedAt: Date.now() };
+  await saveLibrary(lib);
+  return lib;
 }
 
 function getPositionForText(text, positions) {
@@ -242,12 +290,22 @@ async function parseEpub(file) {
     contentFiles.push(...allFiles);
   }
 
-  // Extract text from each content file
+  // Extract text from each content file, tracking chapter boundaries
   let fullText = "";
+  let runningWordCount = 0;
+  const chapters = [];
+  let chapterIndex = 0;
   for (const href of contentFiles) {
     const filePath = href.startsWith("/") ? href.slice(1) : opfDir + href;
     const content = await zip.file(filePath)?.async("text");
     if (content) {
+      // Try to find a heading to use as the chapter title before stripping tags
+      const headingMatch = content.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
+      let chapterTitle = null;
+      if (headingMatch) {
+        chapterTitle = headingMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      }
+
       // Strip HTML tags, preserve paragraph breaks
       const textContent = content
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
@@ -264,12 +322,23 @@ async function parseEpub(file) {
         .replace(/\n{3,}/g, "\n\n")
         .trim();
       if (textContent) {
+        chapterIndex += 1;
+        const wordsInChapter = textContent.split(/\s+/).filter((w) => w.length > 0).length;
+        // Skip near-empty files (e.g. title/cover pages) as separate chapters,
+        // but still include their words in the running count.
+        if (wordsInChapter >= 30) {
+          chapters.push({
+            title: chapterTitle || `Chapter ${chapters.length + 1}`,
+            startIndex: runningWordCount,
+          });
+        }
+        runningWordCount += wordsInChapter;
         fullText += textContent + " ";
       }
     }
   }
 
-  return { text: fullText.trim(), metadata };
+  return { text: fullText.trim(), metadata, chapters };
 }
 
 // Parse text into words and paragraph break positions
@@ -591,6 +660,20 @@ function App() {
     }).catch(() => setIdbLoaded(true));
   }, []);
 
+  // Load the library list on mount
+  useEffect(() => {
+    loadLibrary().then(setLibrary);
+  }, []);
+
+  // Load the active book's chapters (if any) on mount, after the library is ready
+  useEffect(() => {
+    if (activeBookId) {
+      idbGet(`book-chapters-${activeBookId}`).then((c) => {
+        if (Array.isArray(c)) setChapters(c);
+      }).catch(() => {});
+    }
+  }, []);
+
   // Wrap setCurrentIndex to save synchronously on every call
   const currentIndex = _currentIndex;
   const setCurrentIndex = useCallback((valueOrFn) => {
@@ -610,6 +693,13 @@ function App() {
   const [bookMetadata, setBookMetadata] = useState(
     () => savedSettings?.bookMetadata || null,
   );
+  const [library, setLibrary] = useState([]);
+  const [activeBookId, setActiveBookId] = useState(
+    () => savedSettings?.activeBookId || null,
+  );
+  const [chapters, setChapters] = useState([]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [showChapters, setShowChapters] = useState(false);
   const [sideOpacity, setSideOpacity] = useState(
     () => savedSettings?.sideOpacity ?? 0.5,
   );
@@ -637,17 +727,65 @@ function App() {
   const fileInputRef = useRef(null);
 
 
+  // Load a book's saved text, chapters and position from the library into
+  // the active reader state.
+  const openBook = useCallback(async (bookId) => {
+    const entry = library.find((b) => b.id === bookId);
+    if (!entry) return;
+    const [savedText, savedChapters] = await Promise.all([
+      idbGet(`book-text-${bookId}`),
+      idbGet(`book-chapters-${bookId}`),
+    ]);
+    if (typeof savedText !== "string") return;
+    setIsPlaying(false);
+    setActiveBookId(bookId);
+    setBookMetadata({ title: entry.title, author: entry.author, cover: entry.cover });
+    setChapters(Array.isArray(savedChapters) ? savedChapters : []);
+    // Pre-empt the "text changed" effect's own position lookup so it doesn't
+    // fight with this book's saved position below.
+    prevTextRef.current = savedText;
+    setText(savedText);
+    const { words: parsedWords, breaks } = parseText(savedText);
+    setWords(parsedWords);
+    setParagraphBreaks(breaks);
+    const pos = typeof entry.currentIndex === "number" ? entry.currentIndex : 0;
+    setCurrentIndex(Math.max(0, Math.min(parsedWords.length - 1, pos)));
+    setShowLibrary(false);
+  }, [library]);
+
+  const deleteBook = useCallback(async (bookId) => {
+    await Promise.all([
+      idbDelete(`book-text-${bookId}`),
+      idbDelete(`book-chapters-${bookId}`),
+    ]);
+    const lib = await loadLibrary();
+    const updated = lib.filter((b) => b.id !== bookId);
+    await saveLibrary(updated);
+    setLibrary(updated);
+    if (activeBookId === bookId) {
+      setActiveBookId(null);
+      setBookMetadata(null);
+      setChapters([]);
+      setText(DEFAULT_TEXT);
+    }
+  }, [activeBookId]);
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsLoadingFile(true);
     try {
+      let bookText = null;
+      let metadata = null;
+      let bookChapters = [];
+
       if (file.name.endsWith(".epub")) {
         const result = await parseEpub(file);
-        setText(result.text);
+        bookText = result.text;
+        bookChapters = result.chapters || [];
+        metadata = result.metadata;
 
-        let metadata = result.metadata;
         // Fetch missing metadata from Open Library if enabled
         if (fetchMetadataOnline && (!metadata.title || !metadata.cover)) {
           const onlineMetadata = await fetchMetadataFromOpenLibrary(
@@ -662,14 +800,46 @@ function App() {
             };
           }
         }
-        setBookMetadata(metadata);
       } else if (file.name.endsWith(".txt")) {
-        const textContent = await file.text();
-        setText(textContent);
-        setBookMetadata(null);
+        bookText = await file.text();
+        metadata = { title: file.name.replace(/\.txt$/i, ""), author: null, cover: null };
       } else {
         alert("Please upload an EPUB or TXT file");
+        return;
       }
+
+      // Save into the library as a new book
+      const id = makeBookId();
+      await Promise.all([
+        idbSet(`book-text-${id}`, bookText),
+        idbSet(`book-chapters-${id}`, bookChapters),
+      ]);
+      const entry = {
+        id,
+        title: metadata.title || file.name,
+        author: metadata.author,
+        cover: metadata.cover,
+        addedAt: Date.now(),
+        lastOpenedAt: Date.now(),
+        currentIndex: 0,
+        totalWords: bookText.trim().split(/\s+/).filter(Boolean).length,
+      };
+      const lib = await loadLibrary();
+      const updatedLib = [entry, ...lib];
+      await saveLibrary(updatedLib);
+      setLibrary(updatedLib);
+
+      // Open it immediately
+      setIsPlaying(false);
+      setActiveBookId(id);
+      setBookMetadata({ title: entry.title, author: entry.author, cover: entry.cover });
+      setChapters(bookChapters);
+      prevTextRef.current = bookText;
+      setText(bookText);
+      const { words: parsedWords, breaks } = parseText(bookText);
+      setWords(parsedWords);
+      setParagraphBreaks(breaks);
+      setCurrentIndex(0);
     } catch (err) {
       console.error("Error loading file:", err);
       alert("Error loading file: " + err.message);
@@ -679,6 +849,12 @@ function App() {
         fileInputRef.current.value = "";
       }
     }
+  };
+
+  const jumpToChapter = (startIndex) => {
+    setIsPlaying(false);
+    setCurrentIndex(Math.max(0, Math.min(words.length - 1, startIndex)));
+    setShowChapters(false);
   };
 
   // Handle text changes (not on initial mount)
@@ -723,8 +899,10 @@ function App() {
       bookOverlayHidden,
       bookMetadata,
       fetchMetadataOnline,
+      activeBookId,
     });
-  }, [wpm, text, isPlaying, sideOpacity, bookView, bookOverlayHidden, bookMetadata, fetchMetadataOnline, idbLoaded]);
+    if (activeBookId) updateLibraryProgress(activeBookId, currentIndex, words.length).then((lib) => lib && setLibrary(lib));
+  }, [wpm, text, isPlaying, sideOpacity, bookView, bookOverlayHidden, bookMetadata, fetchMetadataOnline, activeBookId, idbLoaded]);
 
   // Save full settings when page unloads or goes to background (iOS)
   // Save full settings when page unloads or goes to background (iOS)
@@ -741,7 +919,9 @@ function App() {
         bookOverlayHidden,
         bookMetadata,
         fetchMetadataOnline,
+        activeBookId,
       });
+      if (activeBookId) updateLibraryProgress(activeBookId, currentIndex, words.length);
     };
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") save();
@@ -752,7 +932,7 @@ function App() {
       window.removeEventListener("beforeunload", save);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [wpm, text, currentIndex, sideOpacity, bookView, bookOverlayHidden, bookMetadata, fetchMetadataOnline, idbLoaded]);
+  }, [wpm, text, currentIndex, sideOpacity, bookView, bookOverlayHidden, bookMetadata, fetchMetadataOnline, activeBookId, idbLoaded]);
 
   // Update URL hash with current position in real time
   useEffect(() => {
@@ -953,6 +1133,24 @@ function App() {
       {/* Top controls */}
       <div className="top-bar">
         <div className="top-left">
+          <button
+            onClick={() => setShowLibrary(!showLibrary)}
+            className={`text-btn icon-btn${showLibrary ? " active" : ""}`}
+            title="Library"
+          >
+            <Library size={16} />
+            <span className="text-btn-label">Library</span>
+          </button>
+          {chapters.length > 1 && (
+            <button
+              onClick={() => setShowChapters(!showChapters)}
+              className={`text-btn icon-btn${showChapters ? " active" : ""}`}
+              title="Chapters"
+            >
+              <List size={16} />
+              <span className="text-btn-label">Chapters</span>
+            </button>
+          )}
           <button
             onClick={() => setShowTextInput(!showTextInput)}
             className={`text-btn icon-btn${showTextInput ? " active" : ""}`}
@@ -1466,6 +1664,169 @@ function App() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Library modal */}
+      {showLibrary && (
+        <div className="modal-overlay" onClick={() => setShowLibrary(false)} role="presentation">
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="library-title"
+          >
+            <div className="modal-header">
+              <h2 id="library-title" className="modal-title">Library</h2>
+              <button onClick={() => setShowLibrary(false)} className="close-btn">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-content">
+              <button
+                onClick={() => {
+                  setShowLibrary(false);
+                  fileInputRef.current?.click();
+                }}
+                className="text-btn icon-btn"
+                style={{ marginBottom: "16px" }}
+                disabled={isLoadingFile}
+              >
+                <Upload size={16} />
+                <span className="text-btn-label">
+                  {isLoadingFile ? "Loading..." : "Import EPUB or TXT"}
+                </span>
+              </button>
+
+              {library.length === 0 ? (
+                <p className="paragraph">
+                  Nothing here yet. Import an EPUB or TXT file to add it to your library.
+                </p>
+              ) : (
+                <ul className="list" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                  {library.map((book) => {
+                    const pct = book.totalWords
+                      ? Math.round(((book.currentIndex || 0) / book.totalWords) * 100)
+                      : 0;
+                    return (
+                      <li
+                        key={book.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                          padding: "10px 0",
+                          borderBottom: "1px solid #2a2a2a",
+                        }}
+                      >
+                        {book.cover ? (
+                          <img
+                            src={book.cover}
+                            alt=""
+                            style={{ width: "40px", height: "58px", objectFit: "cover", flexShrink: 0, borderRadius: "2px" }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "40px",
+                              height: "58px",
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              backgroundColor: "#222",
+                              borderRadius: "2px",
+                            }}
+                          >
+                            <BookOpen size={18} />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => openBook(book.id)}
+                          style={{
+                            flex: 1,
+                            textAlign: "left",
+                            background: "none",
+                            border: "none",
+                            color: "inherit",
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
+                        >
+                          <div style={{ fontWeight: book.id === activeBookId ? 600 : 400 }}>
+                            {book.title}
+                          </div>
+                          {book.author && (
+                            <div style={{ fontSize: "0.85em", opacity: 0.7 }}>{book.author}</div>
+                          )}
+                          <div style={{ fontSize: "0.8em", opacity: 0.6 }}>{pct}% read</div>
+                        </button>
+                        <button
+                          onClick={() => deleteBook(book.id)}
+                          className="close-btn"
+                          title="Remove from library"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chapters modal */}
+      {showChapters && (
+        <div className="modal-overlay" onClick={() => setShowChapters(false)} role="presentation">
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chapters-title"
+          >
+            <div className="modal-header">
+              <h2 id="chapters-title" className="modal-title">Chapters</h2>
+              <button onClick={() => setShowChapters(false)} className="close-btn">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-content">
+              <ul className="list" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                {chapters.map((ch, i) => {
+                  const isCurrent =
+                    currentIndex >= ch.startIndex &&
+                    (i === chapters.length - 1 || currentIndex < chapters[i + 1].startIndex);
+                  return (
+                    <li key={i}>
+                      <button
+                        onClick={() => jumpToChapter(ch.startIndex)}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          background: "none",
+                          border: "none",
+                          color: "inherit",
+                          cursor: "pointer",
+                          padding: "10px 0",
+                          borderBottom: "1px solid #2a2a2a",
+                          fontWeight: isCurrent ? 600 : 400,
+                          opacity: isCurrent ? 1 : 0.85,
+                        }}
+                      >
+                        {ch.title}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           </div>
         </div>
