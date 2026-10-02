@@ -1,3 +1,11 @@
+### 2026-10-02: Unreleased
+
+* Add pure reader timing module with word delay, ORP index and long word splitting
+* Add reader themes with WCAG contrast checks and night mode detection
+* Add progressive drag and swipe gesture curves for WPM and scrubbing
+* Add pointer gesture layer with direction lock, tap and long press
+* Add sentence navigation helpers for back and forward buttons
+
 ### 2026-09-20: 1.4.0-mett
 
 * Add a library to store and browse every imported EPUB or TXT file
