@@ -6,6 +6,7 @@ import BottomBar from "./ui/BottomBar.jsx";
 import Drawer from "./ui/Drawer.jsx";
 import "./ui/ui.css";
 import "./app2.css";
+import { WORDS_PER_PAGE, pageCount, pageOf, pageStart, wordToIndex } from "./ui/pages.js";
 import { getWordDelay, getORPIndex, splitLongWord } from "./reader/timing.js";
 import { applyTheme, isNight, THEMES } from "./reader/themes.js";
 import { dragToWpm, swipeToWords } from "./reader/gestures.js";
@@ -43,6 +44,9 @@ export default function AppV2() {
   const [tab, setTab] = useState("library");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState("");
+  const [goto, setGoto] = useState(false);
+  const [gotoPage, setGotoPage] = useState("");
+  const [gotoWord, setGotoWord] = useState("");
 
   const warm = useRef(0);
   const sentences = useRef(0);
@@ -322,6 +326,15 @@ export default function AppV2() {
           bookmarks={bmSet} paragraphBreaks={breaks} playing={playing}
         />
       </div>
+      {book && (
+        <div className="app2-pages">
+          <button aria-label="Previous page" onClick={() => jump(pageStart(pageOf(index) - 1, words.length))}>&lsaquo;</button>
+          <button className="app2-pages-go" onClick={() => { setGotoPage(String(pageOf(index))); setGotoWord(String(index + 1)); setGoto(true); }}>
+            Page {pageOf(index)} / {pageCount(words.length)} <span>word {(index + 1).toLocaleString()}</span>
+          </button>
+          <button aria-label="Next page" onClick={() => jump(pageStart(pageOf(index) + 1, words.length))}>&rsaquo;</button>
+        </div>
+      )}
       <BottomBar
         playing={playing} onPlayPause={togglePlay}
         onPrevSentence={() => jump(prevSentenceStart(starts, index))}
@@ -329,6 +342,30 @@ export default function AppV2() {
         wpm={settings.wpm} progress={words.length ? index / words.length : 0}
         onSeek={(f) => jump(Math.round(f * (words.length - 1)))} timeLeftLabel={timeLeftLabel}
       />
+      {goto && (
+        <div className="app2-goto-scrim" onClick={() => setGoto(false)}>
+          <form
+            className="app2-goto" onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = new FormData(e.target);
+              const w = form.get("word"), p = form.get("page");
+              jump(e.nativeEvent.submitter?.name === "page-go" ? pageStart(p, words.length) : wordToIndex(w, words.length));
+              setGoto(false);
+            }}
+          >
+            <label>Page (1-{pageCount(words.length)})
+              <span><input name="page" type="number" inputMode="numeric" min="1" max={pageCount(words.length)} value={gotoPage} onChange={(e) => setGotoPage(e.target.value)} autoFocus />
+              <button name="page-go" type="submit">Go</button></span>
+            </label>
+            <label>Word (1-{words.length.toLocaleString()})
+              <span><input name="word" type="number" inputMode="numeric" min="1" max={words.length} value={gotoWord} onChange={(e) => setGotoWord(e.target.value)} />
+              <button name="word-go" type="submit">Go</button></span>
+            </label>
+            <small>A page is {WORDS_PER_PAGE} words.</small>
+          </form>
+        </div>
+      )}
       <Drawer open={drawer} onClose={() => setDrawer(false)} tab={tab} onTab={openDrawer} panels={panels} />
     </div>
   );
