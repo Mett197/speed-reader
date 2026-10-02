@@ -19,6 +19,10 @@ describe("THEMES", () => {
       expect(contrastRatio(t.accent, t.bg)).toBeGreaterThanOrEqual(4.5);
     });
   }
+  it("classic is first and matches the old app colours", () => {
+    expect(Object.keys(THEMES)[0]).toBe("classic");
+    expect(THEMES.classic).toEqual({ bg: "#0a0a0a", fg: "#ffffff", accent: "#ff6b6b", dim: "#626262" });
+  });
   it("night is amber on black", () => {
     expect(THEMES.night.bg).toBe("#000000");
   });

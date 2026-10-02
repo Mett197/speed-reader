@@ -16,7 +16,10 @@ export function contrastRatio(fg, bg) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+// classic: exact colours of the old app (index.css: body bg #0a0a0a, text #fff,
+// .orp-char #ff6b6b, .placeholder/.skip-btn rgb(98,98,98)).
 export const THEMES = {
+  classic: { bg: "#0a0a0a", fg: "#ffffff", accent: "#ff6b6b", dim: "#626262" },
   light: { bg: "#fafaf7", fg: "#1a1a1a", accent: "#c0271a", dim: "#6b6b66" },
   sepia: { bg: "#f4ecd8", fg: "#3b2f20", accent: "#a52a14", dim: "#75664f" },
   dark: { bg: "#121212", fg: "#e6e6e6", accent: "#ff6b5e", dim: "#8a8a8a" },
