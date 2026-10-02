@@ -42,3 +42,13 @@ export function hashText(text) {
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
   return `h:${(h >>> 0).toString(36)}-${text.length.toString(36)}`;
 }
+
+// Ids of books whose text is cached on this device (readable offline).
+export async function cachedIds() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, "readonly").objectStore(STORE).getAllKeys();
+    req.onsuccess = () => resolve(new Set(req.result));
+    req.onerror = () => reject(req.error);
+  });
+}

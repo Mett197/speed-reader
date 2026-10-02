@@ -12,7 +12,7 @@ import { applyTheme, isNight, THEMES } from "./reader/themes.js";
 import { dragToWpm, swipeToWords } from "./reader/gestures.js";
 import { getSentenceStarts, prevSentenceStart, nextSentenceStart } from "./reader/sentences.js";
 import { parseEpub, parseText } from "./lib/books.js";
-import { saveText, getText, hashText } from "./lib/texts.js";
+import { saveText, getText, hashText, cachedIds } from "./lib/texts.js";
 import * as store from "./sync/store.js";
 import { startAutoSync, debouncedSaveProgress } from "./sync/couch.js";
 import { kavitaListBooks, kavitaFetchEpub } from "./api/kavita.js";
@@ -60,13 +60,21 @@ export default function AppV2() {
   const indexRef = useRef(0);
   indexRef.current = index;
 
+  const loadBooks = useCallback(async () => {
+    const [all, cached] = await Promise.all([store.getBooks(), cachedIds().catch(() => new Set())]);
+    setBooks(all.map((b) => ({
+      ...b,
+      offline: cached.has(b.id),
+    })));
+  }, []);
+
   const starts = useMemo(() => getSentenceStarts(words), [words]);
 
   // ---- boot ----
   useEffect(() => {
     (async () => {
       setSettings(await store.getSettings());
-      setBooks(await store.getBooks());
+      await loadBooks();
       const stop = startAutoSync();
       refreshKavita();
       return stop;
@@ -88,7 +96,7 @@ export default function AppV2() {
           await store.saveBook({ ...old, kavitaLibraryId: b.kavitaLibraryId, kavitaVolumeId: b.kavitaVolumeId ?? old.kavitaVolumeId, kavitaSeriesId: b.kavitaSeriesId ?? old.kavitaSeriesId });
         }
       }
-      setBooks(await store.getBooks());
+      await loadBooks();
       return found;
     } catch {
       return [];
@@ -196,6 +204,7 @@ export default function AppV2() {
       setChapters((rec.chapters || []).map((c) => ({ title: c.title, wordIndex: c.startIndex })));
       spineRef.current = rec.spine || [];
       setBook(meta);
+      loadBooks();
       setIndex(Math.min(meta.wordIndex || 0, Math.max(0, p.words.length - 1)));
       setSub(0);
       setBookmarks((await store.getBookmarks(meta.id)).filter((b) => !b.deleted));
@@ -222,7 +231,7 @@ export default function AppV2() {
       const existing = (await store.getBooks()).find((b) => b.id === id);
       const meta = existing || { id, title, author, source: "local", totalWords: parseText(text).words.length, wordIndex: 0 };
       if (!existing) await store.saveBook(meta);
-      setBooks(await store.getBooks());
+      await loadBooks();
       await openBook(meta);
     } catch (e) {
       setBusy(`Import failed: ${e.message}`);

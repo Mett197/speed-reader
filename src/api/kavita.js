@@ -68,8 +68,14 @@ export async function kavitaListBooks(query = "") {
     sortOptions: { sortField: SORT_NAME, isAscending: true },
     limitTo: 0,
   };
-  const series = await (await postJson("/api/series/v2?pageNumber=1&pageSize=50", filter)).json();
-  const epubs = (Array.isArray(series) ? series : []).filter((s) => s.format === FORMAT_EPUB);
+  const series = [];
+  for (let page = 1; page <= 50; page++) {
+    const batch = await (await postJson(`/api/series/v2?pageNumber=${page}&pageSize=100`, filter)).json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    series.push(...batch);
+    if (batch.length < 100) break;
+  }
+  const epubs = series.filter((s) => s.format === FORMAT_EPUB);
   const books = [];
   for (const s of epubs) {
     const volumes = await (await authedFetch(`/api/series/volumes?seriesId=${s.id}`)).json();
@@ -86,6 +92,7 @@ export async function kavitaListBooks(query = "") {
           kavitaSeriesId: s.id,
           kavitaVolumeId: v.id,
           kavitaChapterId: c.id,
+          author: s.author || "",
         });
       }
     }
