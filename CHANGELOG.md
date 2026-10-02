@@ -2,6 +2,7 @@
 
 * Add RsvpBand, TextPane, BottomBar, Drawer and panels with styles and tests
 * Add word search helper for the UI
+* Add AppV2 shell wiring the new screens, sync and API clients; `?old=1` opens the original reader
 * Add pure reader timing module with word delay, ORP index and long word splitting
 * Add reader themes with WCAG contrast checks and night mode detection
 * Add progressive drag and swipe gesture curves for WPM and scrubbing
