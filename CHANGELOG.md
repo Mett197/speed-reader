@@ -1,5 +1,6 @@
 ### 2026-10-02: unreleased
 
+* Add IndexedDB local store
 * Add LazyLibrarian API client
 * Add Kavita API client
 * Add fake-indexeddb for sync tests
