@@ -148,7 +148,11 @@ export default function AppV2() {
         const blob = await makeEpub({ title: b.title, author: b.author, text: rec.text, chapters: rec.chapters || [] });
         await uploadBook(blob, b);
         await store.saveBook({ ...b, uploaded: true });
-      } catch { /* offline or upload not available: retried next start */ }
+        setBusy(`Sent "${b.title}" to your server library.`);
+        setTimeout(() => setBusy(""), 4000);
+      } catch (e) {
+        setBusy(`Couldn't send "${b.title}" to the server (${e.message}). Will retry next start.`); // retried next start
+      }
     }
     await loadBooks();
   }
