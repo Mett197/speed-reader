@@ -78,7 +78,23 @@ export default function AppV2() {
   }, []);
 
   const starts = useMemo(() => getSentenceStarts(words), [words]);
-  const sortedChapters = useMemo(() => [...chapters].filter((c) => Number.isFinite(c.wordIndex)).sort((a, b) => a.wordIndex - b.wordIndex), [chapters]);
+  // Sections the reader works in, one at a time: the book's chapters, or parts of
+  // ~4000 words when the book has no usable chapter list.
+  const sortedChapters = useMemo(() => {
+    const list = [...chapters].filter((c) => Number.isFinite(c.wordIndex)).sort((a, b) => a.wordIndex - b.wordIndex);
+    if (list.length >= 2 || !words.length) return list;
+    const parts = [];
+    const size = 4000;
+    for (let i = 0, k = 1; i < words.length; i += size, k++) parts.push({ title: `Part ${k}`, wordIndex: i });
+    return parts;
+  }, [chapters, words.length]);
+  const chapterAt = (i) => {
+    let pos = -1;
+    for (let k = 0; k < sortedChapters.length; k++) if (sortedChapters[k].wordIndex <= i) pos = k;
+    const start = pos >= 0 ? sortedChapters[pos].wordIndex : 0;
+    const end = pos + 1 < sortedChapters.length ? sortedChapters[pos + 1].wordIndex : words.length;
+    return { pos, start, end, title: pos >= 0 ? sortedChapters[pos].title : "" };
+  };
 
   // ---- boot ----
   useEffect(() => {
@@ -227,6 +243,16 @@ export default function AppV2() {
       if (n === 1 && sub < parts.length - 1) { setSub(sub + 1); return; }
       const next = index + n;
       if (next >= words.length) { setPlaying(false); endSession(); setIndex(words.length - 1); return; }
+      const chEndNow = chapterAt(index).end;
+      if (next >= chEndNow && index < chEndNow) {
+        // End of chapter: pause on the first word of the next one; play continues from there.
+        setSub(0);
+        setIndex(next);
+        debouncedSaveProgress(book.id, next);
+        reporter.report(book, spineRef.current, next);
+        pause();
+        return;
+      }
       setSub(0);
       setIndex(next);
       if (ENDS_SENTENCE.test(last) && settings.pauseEverySentences > 0) {
@@ -350,7 +376,14 @@ export default function AppV2() {
   }
 
   // ---- controls ----
-  const togglePlay = () => (playing ? pause() : play());
+  // One toggle per tap: a second trigger within 350 ms (e.g. button + gesture) is ignored.
+  const lastToggle = useRef(0);
+  const togglePlay = () => {
+    const now = Date.now();
+    if (now - lastToggle.current < 350) return;
+    lastToggle.current = now;
+    if (playing) pause(); else play();
+  };
   const toggleBookmark = async (i) => {
     if (!book) return;
     await store.toggleBookmark(book.id, i);
@@ -452,11 +485,16 @@ export default function AppV2() {
   };
 
   const pct = words.length ? Math.round((index / words.length) * 100) : 0;
-  let chPos = -1;
-  for (let i = 0; i < sortedChapters.length; i++) if (sortedChapters[i].wordIndex <= index) chPos = i;
-  const chStart = chPos >= 0 ? sortedChapters[chPos].wordIndex : 0;
-  const chEnd = chPos + 1 < sortedChapters.length ? sortedChapters[chPos + 1].wordIndex : words.length;
-  const chTitle = chPos >= 0 ? sortedChapters[chPos].title : "";
+  const ch = chapterAt(index);
+  const chStart = ch.start;
+  const chEnd = ch.end;
+  const chTitle = ch.title;
+  const chLen = Math.max(1, chEnd - chStart);
+  const chPct = Math.min(100, Math.round(((index - chStart) / chLen) * 100));
+  const chPage = Math.floor((index - chStart) / WORDS_PER_PAGE) + 1;
+  const chPages = Math.max(1, Math.ceil(chLen / WORDS_PER_PAGE));
+  const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
+  const chLeft = fmtMin(Math.round(Math.max(0, chEnd - index) / settings.wpm));
   const traverse = (phase, dy) => {
     if (phase === "start") {
       trav.current = { idx: indexRef.current };
@@ -544,13 +582,13 @@ export default function AppV2() {
 
         <div
           className="progress-container" data-no-gesture
-          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); jump(Math.round(((e.clientX - r.left) / r.width) * (words.length - 1))); }}
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); jump(chStart + Math.round(((e.clientX - r.left) / r.width) * (chLen - 1))); }}
         >
-          <div className="progress-bar" style={{ width: `${pct}%` }} />
+          <div className="progress-bar" style={{ width: `${chPct}%` }} />
         </div>
         <div className="progress-row">
           <button className="progress-text app2-pos" onClick={() => { setGotoPage(String(pageOf(index))); setGotoWord(String(index + 1)); setGoto(true); }}>
-            {words.length ? `${chTitle ? chTitle + " · " : ""}${(index + 1).toLocaleString()} / ${words.length.toLocaleString()} (${pct}%) · page ${pageOf(index)}/${pageCount(words.length)}` : ""}
+            {words.length ? `${chTitle || "Chapter"} · ${chPct}% · page ${chPage}/${chPages}` : ""}
           </button>
         </div>
 
@@ -562,7 +600,7 @@ export default function AppV2() {
             <div className="book-info">
               <h3 className="book-title">{book.title}</h3>
               {book.author && <p className="book-author">{book.author}</p>}
-              <p className="book-stats">{timeLeftLabel}</p>
+              <p className="book-stats">{chLeft} left in chapter · {pct}% of book</p>
             </div>
           </aside>
         )}
