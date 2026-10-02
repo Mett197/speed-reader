@@ -17,7 +17,7 @@ body { position: fixed; inset: 0; }
 .app2-wpm-bubble small { font-size: 0.8rem; color: #888; }
 @keyframes app2-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-.app2-toast { position: absolute; left: 0; right: 0; top: 46%; text-align: center; color: #626262; font-size: 0.9rem; pointer-events: none; z-index: 2; }
+.app2-toast { position: absolute; left: 16px; right: 16px; top: 64%; text-align: center; color: #626262; font-size: 0.9rem; pointer-events: none; z-index: 2; }
 
 .app2-goto-scrim { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.6); display: grid; place-items: end center; touch-action: auto; }
 .app2-goto { width: min(420px, 100%); padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); background: #141414; color: #fff; border-top: 1px solid #222; border-radius: 16px 16px 0 0; display: grid; gap: 14px; }
