@@ -1,5 +1,6 @@
 ### 2026-10-02: unreleased
 
+* Add tests for API clients and sync
 * Add CouchDB sync, auto sync and debounced progress
 * Add IndexedDB local store
 * Add LazyLibrarian API client
