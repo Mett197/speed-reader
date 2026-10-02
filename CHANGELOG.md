@@ -1,5 +1,6 @@
 ### 2026-10-02: unreleased
 
+* Add nginx config template with key injection
 * Add tests for API clients and sync
 * Add CouchDB sync, auto sync and debounced progress
 * Add IndexedDB local store
