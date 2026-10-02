@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Library, Minus, Plus, BookOpen, Eye, EyeOff, Settings, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import BookStage from "./ui/BookStage.jsx";
+import LibraryScreen from "./ui/LibraryScreen.jsx";
 import { attachGestures } from "./reader/gestureLayer.js";
 import Drawer from "./ui/Drawer.jsx";
 import "./ui/ui.css";
@@ -46,7 +47,8 @@ export default function AppV2() {
   const [bookmarks, setBookmarks] = useState([]);
   const [stats, setStats] = useState(null);
   const [drawer, setDrawer] = useState(false);
-  const [tab, setTab] = useState("library");
+  const [tab, setTab] = useState("search");
+  const [libOpen, setLibOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState("");
   const [requests, setRequests] = useState([]);
@@ -355,7 +357,7 @@ export default function AppV2() {
   const containerRef = useRef(null);
   const closedAt = useRef(0);
   const closeDrawer = () => { closedAt.current = Date.now(); setDrawer(false); };
-  const blocked = () => drawer || goto || Date.now() - closedAt.current < 450;
+  const blocked = () => drawer || goto || libOpen || Date.now() - closedAt.current < 450;
 
   const gestures = {
     onTap: () => { if (!blocked()) togglePlay(); },
@@ -449,7 +451,7 @@ export default function AppV2() {
     <div className="container app2-home" ref={containerRef}>
       <div className="top-bar">
         <div className="top-left">
-          <button onClick={() => openDrawer("library")} className="text-btn icon-btn" title="Library">
+          <button onClick={() => { loadBooks(); setLibOpen(true); }} className="text-btn icon-btn" title="Library">
             <Library size={16} />
             <span className="text-btn-label">Library</span>
           </button>
@@ -556,6 +558,13 @@ export default function AppV2() {
         </div>
       )}
 
+      <LibraryScreen
+        open={libOpen} books={books} currentId={book?.id}
+        onOpen={(b) => { setLibOpen(false); closedAt.current = Date.now(); openBook(b); }}
+        onClose={() => { closedAt.current = Date.now(); setLibOpen(false); }}
+        onImport={(f) => { setLibOpen(false); closedAt.current = Date.now(); importFile(f); }}
+        onRename={panels.library.onRename} onDelete={panels.library.onDelete} onForget={panels.library.onForget}
+      />
       <Drawer open={drawer} onClose={closeDrawer} tab={tab} onTab={openDrawer} panels={panels} />
     </>
   );

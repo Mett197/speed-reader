@@ -7,7 +7,6 @@ import StatsPanel from "./StatsPanel.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 
 export const TABS = [
-  ["library", "Library", LibraryPanel],
   ["contents", "Contents", ContentsPanel],
   ["search", "Search", SearchPanel],
   ["bookmarks", "Bookmarks", BookmarksPanel],
