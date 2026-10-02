@@ -10,6 +10,15 @@ map $arg_cmd $ll_cmd_allowed {
   getWanted 1;
 }
 
+# Each LazyLibrarian command gets only the parameters it accepts (it rejects unknown ones).
+map $arg_cmd $ll_args {
+  default "";
+  findBook "cmd=findBook&name=$arg_name";
+  addBook "cmd=addBook&id=$arg_id";
+  queueBook "cmd=queueBook&id=$arg_id&type=eBook";
+  getWanted "cmd=getWanted";
+}
+
 server {
   listen 80;
   server_name _;
@@ -36,7 +45,7 @@ server {
     if ($ll_cmd_allowed = 0) {
       return 403;
     }
-    set $args "cmd=$arg_cmd&name=$arg_name&id=$arg_id&type=$arg_type&apikey=${LL_API_KEY}";
+    set $args "$ll_args&apikey=${LL_API_KEY}";
     rewrite ^/api/ll/(.*)$ /$1 break;
     proxy_pass http://lazylibrarian:5299;
     proxy_set_header Host $host;

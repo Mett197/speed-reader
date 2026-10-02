@@ -1,4 +1,4 @@
-// LazyLibrarian client. Only findBook, addBook and queueBook are used; nginx adds the apikey.
+// LazyLibrarian client: findBook, addBook, queueBook, getWanted; nginx adds the apikey.
 
 const BASE = "/api/ll/api";
 
@@ -49,4 +49,15 @@ export async function llSearch(name) {
 export async function llAddAndQueue(id) {
   await call({ cmd: "addBook", id });
   await call({ cmd: "queueBook", id, type: "eBook" });
+}
+
+// Books LazyLibrarian is still looking for: [{ id, title, author, status }].
+export async function llWanted() {
+  const data = await call({ cmd: "getWanted" });
+  return asList(data).map((b) => ({
+    id: String(b.bookid ?? b.BookID ?? b.id ?? ""),
+    title: String(b.bookname ?? b.BookName ?? b.title ?? ""),
+    author: String(b.authorname ?? b.AuthorName ?? b.author ?? ""),
+    status: String(b.status ?? b.Status ?? "Wanted"),
+  }));
 }

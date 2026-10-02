@@ -102,3 +102,7 @@
 .book-menu .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }
 .btn-danger { color: #ff6b6b; }
 .book-main { -webkit-touch-callout: none; user-select: none; }
+
+.req-in-library { color: #6bcf8a; }
+.req-wanted, .req-requested { color: #c9a24a; }
+.req-snatched, .req-downloading { color: #6ba8ff; }

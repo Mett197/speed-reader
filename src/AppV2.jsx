@@ -19,7 +19,7 @@ import { makeEpub } from "./lib/makeEpub.js";
 import { readOldLibrary } from "./lib/oldLibrary.js";
 import { uploadBook } from "./api/upload.js";
 import { createKavitaReporter } from "./sync/kavitaProgress.js";
-import { llSearch, llAddAndQueue } from "./api/lazylibrarian.js";
+import { llSearch, llAddAndQueue, llWanted } from "./api/lazylibrarian.js";
 
 const reporter = createKavitaReporter();
 
@@ -49,6 +49,7 @@ export default function AppV2() {
   const [tab, setTab] = useState("library");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState("");
+  const [requests, setRequests] = useState([]);
   const [goto, setGoto] = useState(false);
   const [gotoPage, setGotoPage] = useState("");
   const [gotoWord, setGotoWord] = useState("");
@@ -318,6 +319,26 @@ export default function AppV2() {
     return out;
   }
 
+  // ---- book requests (LazyLibrarian), remembered in synced settings ----
+  async function requestBook(it) {
+    await llAddAndQueue(it.llId);
+    const list = (settings.requests || []).filter((r) => r.id !== it.llId);
+    await changeSettings({ requests: [{ id: it.llId, title: it.title, author: it.author, at: Date.now() }, ...list] });
+    loadRequests();
+  }
+
+  async function loadRequests() {
+    const mine = (await store.getSettings()).requests || settings.requests || [];
+    let wanted = [];
+    try { wanted = await llWanted(); } catch { /* offline: show what we know */ }
+    const byId = new Map(wanted.map((w) => [w.id, w]));
+    const have = new Set((await store.getBooks()).filter((b) => b.source === "kavita").map((b) => norm(b.title)));
+    setRequests(mine.map((r) => {
+      const status = have.has(norm(r.title)) ? "In library" : byId.get(r.id)?.status || (wanted.length ? "Downloading" : "Requested");
+      return { ...r, status };
+    }));
+  }
+
   // ---- controls ----
   const togglePlay = () => (playing ? pause() : play());
   const toggleBookmark = async (i) => {
@@ -407,7 +428,7 @@ export default function AppV2() {
     contents: { chapters, currentIndex: index, onJump: (i) => { jump(i); closeDrawer(); } },
     search: {
       words, onJump: (i) => { jump(i); closeDrawer(); },
-      onFindBook: findBook, onRequestBook: (it) => llAddAndQueue(it.llId), libraryIds,
+      onFindBook: findBook, onRequestBook: requestBook, libraryIds, requests, onLoadRequests: loadRequests,
     },
     bookmarks: { bookmarks, words, onJump: (i) => { jump(i); closeDrawer(); }, onRemove: (b) => toggleBookmark(b.wordIndex) },
     stats: { stats },

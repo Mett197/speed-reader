@@ -5,13 +5,17 @@ export const DEBOUNCE_MS = 250;
 
 // libraryIds: Set of ids/titles already in library, used to mark results as 'in library'.
 // item shape from onFindBook: { id, title, author, inLibrary? }
-export default function SearchPanel({ words = [], onJump, onFindBook, onRequestBook, libraryIds = new Set() }) {
+// requests: [{ id, title, author, status }] from the app; onLoadRequests refreshes them.
+export default function SearchPanel({ words = [], onJump, onFindBook, onRequestBook, libraryIds = new Set(), requests = [], onLoadRequests }) {
   const [mode, setMode] = useState("book");
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [requested, setRequested] = useState({});
+  const [reqErr, setReqErr] = useState({});
+
+  useEffect(() => { if (mode === "find" && onLoadRequests) onLoadRequests(); }, [mode]); // eslint-disable-line
 
   useEffect(() => {
     setErr("");
@@ -33,7 +37,7 @@ export default function SearchPanel({ words = [], onJump, onFindBook, onRequestB
   const request = async (item) => {
     setRequested((r) => ({ ...r, [item.id]: "pending" }));
     try { await onRequestBook(item); setRequested((r) => ({ ...r, [item.id]: "done" })); }
-    catch (e) { setRequested((r) => ({ ...r, [item.id]: "error" })); }
+    catch (e) { setRequested((r) => ({ ...r, [item.id]: "error" })); setReqErr((r) => ({ ...r, [item.id]: e.message })); }
   };
 
   return (
@@ -69,7 +73,7 @@ export default function SearchPanel({ words = [], onJump, onFindBook, onRequestB
               <li key={it.id} className="row">
                 <span className="row-main">
                   <span className="row-title">{it.title}</span>
-                  <span className="row-sub">{it.author}</span>
+                  <span className="row-sub">{st === "error" ? reqErr[it.id] : it.author}</span>
                 </span>
                 {have ? <span className="row-sub">in library</span> : (
                   <button className="row-act" disabled={st === "pending" || st === "done"} onClick={() => request(it)}>
@@ -79,6 +83,23 @@ export default function SearchPanel({ words = [], onJump, onFindBook, onRequestB
               </li>
             );
           })}
+          {!q.trim() && (
+            <li className="sec">
+              <h3 className="sec-h">Your requests</h3>
+              {!requests.length && <p className="empty">Nothing requested yet. Search a title and tap Get it.</p>}
+              <ul className="list">
+                {requests.map((r) => (
+                  <li key={r.id} className="row">
+                    <span className="row-main">
+                      <span className="row-title">{r.title}</span>
+                      <span className="row-sub">{r.author}</span>
+                    </span>
+                    <span className={"badge req-" + r.status.toLowerCase().replace(/\s+/g, "-")}>{r.status}</span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          )}
         </ul>
       )}
     </div>
