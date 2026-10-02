@@ -8,7 +8,7 @@ html, body, #root { height: 100%; margin: 0; background: var(--bg, #121212); col
   padding-top: env(safe-area-inset-top);
   background: var(--bg);
   color: var(--fg);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .app2-top { position: relative; flex: 0 0 38%; min-height: 160px; border-bottom: 1px solid var(--dim); }
@@ -27,7 +27,6 @@ html, body, #root { height: 100%; margin: 0; background: var(--bg, #121212); col
   color: var(--dim); font-size: 0.9rem; pointer-events: none;
 }
 
-.app2 .rsvp-stage { font-family: "JetBrains Mono", ui-monospace, monospace; }
 
 .app2-info {
   position: absolute; top: calc(env(safe-area-inset-top) + 8px); left: 60px; right: 12px; z-index: 4;

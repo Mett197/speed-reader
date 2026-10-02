@@ -25,7 +25,7 @@ export function orpCharIndex(text, orpIndex) {
 
 export default function RsvpBand({
   word = "", chunks, orpIndex = 0, fontScale = 1, wpm,
-  showWpmBubble = false, onTap, onWpmDrag, onScrub, onLongPress,
+  showWpmBubble = false, sideOpacity = 0.5, onTap, onWpmDrag, onScrub, onLongPress,
 }) {
   const bandRef = useRef(null);
   const beforeRef = useRef(null);
@@ -45,10 +45,10 @@ export default function RsvpBand({
   useLayoutEffect(() => {
     const band = bandRef.current;
     if (!band) return;
-    // measure at natural size (fit applied through font-size on the inner stage)
+    // measure at unfitted size (fit is applied through font-size on the stage)
     const stage = band.firstChild;
     const prev = stage.style.fontSize;
-    stage.style.fontSize = "";
+    stage.style.fontSize = `calc(var(--rsvp-base, 2.5rem) * ${fontScale})`;
     const s = fitScale(
       beforeRef.current.offsetWidth, afterRef.current.offsetWidth,
       orpRef.current.offsetWidth, band.clientWidth,
@@ -74,12 +74,21 @@ export default function RsvpBand({
 
   return (
     <div className="rsvp-band" ref={bandRef} data-fit={fit}>
-      <div className="rsvp-stage" style={{ fontSize: `calc(var(--rsvp-base, 2.6rem) * ${fontScale * fit})` }}>
-        <span className="rsvp-side rsvp-before"><span ref={beforeRef}>{before}</span></span>
-        <span className="rsvp-orp" ref={orpRef}>{orp}</span>
-        <span className="rsvp-side rsvp-after"><span ref={afterRef}>{after}</span></span>
+      <div className="rsvp-stage" style={{ fontSize: `calc(var(--rsvp-base, 2.5rem) * ${fontScale * fit})` }}>
+        <div className="rsvp-guide" aria-hidden="true">
+          <span className="rsvp-line" /><span className="rsvp-tick" /><span className="rsvp-line" />
+        </div>
+        <div className="rsvp-word-box">
+          <div className="rsvp-word" style={{ transform: `translateY(-50%) translateX(calc(-${oi}ch - 0.5ch))` }}>
+            <span className="rsvp-before" style={{ opacity: sideOpacity }} ref={beforeRef}>{before}</span>
+            <span className="rsvp-orp" ref={orpRef}>{orp}</span>
+            <span className="rsvp-after" style={{ opacity: sideOpacity }} ref={afterRef}>{after}</span>
+          </div>
+        </div>
+        <div className="rsvp-guide" aria-hidden="true">
+          <span className="rsvp-line" /><span className="rsvp-tick" /><span className="rsvp-line" />
+        </div>
       </div>
-      <div className="rsvp-guide" aria-hidden="true" />
       <div className={"rsvp-bubble" + (showWpmBubble ? " on" : "")} aria-live="polite" hidden={!bubble && !showWpmBubble}>
         {wpm}
       </div>

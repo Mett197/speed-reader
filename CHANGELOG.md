@@ -1,5 +1,7 @@
 ### 2026-10-02: Unreleased
 
+* Restore the old focus word look (monospace ORP alignment, tick guide lines, coral play button) and add the `classic` theme
+* Redesign the menu drawer with icon tabs, sections, book covers, offline badges and theme swatches
 * Add RsvpBand, TextPane, BottomBar, Drawer and panels with styles and tests
 * Add word search helper for the UI
 * Add AppV2 shell wiring the new screens, sync and API clients; `?old=1` opens the original reader
