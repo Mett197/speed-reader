@@ -1,5 +1,6 @@
 ### 2026-10-02: unreleased
 
+* Add LazyLibrarian API client
 * Add Kavita API client
 * Add fake-indexeddb for sync tests
 ### 2026-09-20: 1.4.0-mett
