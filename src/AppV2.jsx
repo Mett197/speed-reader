@@ -16,7 +16,10 @@ import { saveText, getText, hashText } from "./lib/texts.js";
 import * as store from "./sync/store.js";
 import { startAutoSync, debouncedSaveProgress } from "./sync/couch.js";
 import { kavitaListBooks, kavitaFetchEpub } from "./api/kavita.js";
+import { createKavitaReporter } from "./sync/kavitaProgress.js";
 import { llSearch, llAddAndQueue } from "./api/lazylibrarian.js";
+
+const reporter = createKavitaReporter();
 
 const ENDS_SENTENCE = /[.!?…]["'”’)\]»]*$/;
 
@@ -53,6 +56,7 @@ export default function AppV2() {
   const session = useRef(null);
   const dragStart = useRef({ wpm: 300 });
   const scrub = useRef({ idx: 0, was: false });
+  const spineRef = useRef([]);
   const indexRef = useRef(0);
   indexRef.current = index;
 
@@ -77,7 +81,13 @@ export default function AppV2() {
     try {
       const found = await kavitaListBooks(query);
       const have = new Map((await store.getBooks()).map((b) => [b.id, b]));
-      for (const b of found) if (!have.has(b.id)) await store.saveBook({ ...b, wordIndex: 0 });
+      for (const b of found) {
+        const old = have.get(b.id);
+        if (!old) await store.saveBook({ ...b, wordIndex: 0 });
+        else if (old.kavitaLibraryId == null && b.kavitaLibraryId != null) {
+          await store.saveBook({ ...old, kavitaLibraryId: b.kavitaLibraryId, kavitaVolumeId: b.kavitaVolumeId ?? old.kavitaVolumeId, kavitaSeriesId: b.kavitaSeriesId ?? old.kavitaSeriesId });
+        }
+      }
       setBooks(await store.getBooks());
       return found;
     } catch {
@@ -89,6 +99,7 @@ export default function AppV2() {
   const endSession = useCallback(() => {
     const s = session.current;
     session.current = null;
+    reporter.flush();
     if (!s) return;
     const n = indexRef.current - s.startIndex;
     const now = Date.now();
@@ -115,8 +126,10 @@ export default function AppV2() {
 
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === "hidden") pause(); };
+    const onPageHide = () => reporter.flush();
     document.addEventListener("visibilitychange", onHide);
-    return () => document.removeEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => { document.removeEventListener("visibilitychange", onHide); window.removeEventListener("pagehide", onPageHide); };
   }, [pause]);
 
   // ---- playback loop ----
@@ -152,6 +165,7 @@ export default function AppV2() {
         if (sentences.current % settings.pauseEverySentences === 0) pause();
       }
       debouncedSaveProgress(book.id, next);
+      reporter.report(book, spineRef.current, next);
     }, delay);
     return () => clearTimeout(t);
   }, [playing, index, sub, settings.wpm, settings.chunkSize, words]); // eslint-disable-line
@@ -160,7 +174,7 @@ export default function AppV2() {
     const k = Math.max(0, Math.min(words.length - 1, i));
     setSub(0);
     setIndex(k);
-    if (book) debouncedSaveProgress(book.id, k);
+    if (book) { debouncedSaveProgress(book.id, k); reporter.report(book, spineRef.current, k); }
   }, [words.length, book]);
 
   // ---- opening books ----
@@ -170,16 +184,17 @@ export default function AppV2() {
     setBusy("Opening…");
     try {
       let rec = await getText(meta.id);
-      if (!rec && meta.source === "kavita") {
+      if ((!rec || !rec.spine?.length) && meta.source === "kavita") {
         const parsed = await parseEpub(await kavitaFetchEpub(meta.kavitaChapterId));
-        await saveText(meta.id, parsed.text, parsed.chapters);
-        rec = { text: parsed.text, chapters: parsed.chapters };
+        await saveText(meta.id, parsed.text, parsed.chapters, parsed.spine);
+        rec = { text: parsed.text, chapters: parsed.chapters, spine: parsed.spine };
       }
       if (!rec) { setBusy("This book isn't on this device. Import the file here."); return; }
       const p = parseText(rec.text);
       setWords(p.words);
       setBreaks(p.breaks);
       setChapters((rec.chapters || []).map((c) => ({ title: c.title, wordIndex: c.startIndex })));
+      spineRef.current = rec.spine || [];
       setBook(meta);
       setIndex(Math.min(meta.wordIndex || 0, Math.max(0, p.words.length - 1)));
       setSub(0);
@@ -194,16 +209,16 @@ export default function AppV2() {
   async function importFile(file) {
     setBusy("Importing…");
     try {
-      let text, title = file.name.replace(/\.[^.]+$/, ""), author = "", chapters = [];
+      let text, title = file.name.replace(/\.[^.]+$/, ""), author = "", chapters = [], spine = [];
       if (/\.epub$/i.test(file.name)) {
         const p = await parseEpub(file);
-        text = p.text; chapters = p.chapters;
+        text = p.text; chapters = p.chapters; spine = p.spine || [];
         title = p.metadata?.title || title; author = p.metadata?.author || "";
       } else {
         text = await file.text();
       }
       const id = hashText(text);
-      await saveText(id, text, chapters);
+      await saveText(id, text, chapters, spine);
       const existing = (await store.getBooks()).find((b) => b.id === id);
       const meta = existing || { id, title, author, source: "local", totalWords: parseText(text).words.length, wordIndex: 0 };
       if (!existing) await store.saveBook(meta);
