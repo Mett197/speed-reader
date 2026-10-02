@@ -5,6 +5,13 @@
 * Add progressive drag and swipe gesture curves for WPM and scrubbing
 * Add pointer gesture layer with direction lock, tap and long press
 * Add sentence navigation helpers for back and forward buttons
+* Add fake-indexeddb for sync tests
+* Add Kavita API client
+* Add LazyLibrarian API client
+* Add IndexedDB local store
+* Add CouchDB sync, auto sync and debounced progress
+* Add tests for API clients and sync
+* Add nginx config template with key injection
 
 ### 2026-09-20: 1.4.0-mett
 

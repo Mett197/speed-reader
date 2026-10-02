@@ -1,0 +1,62 @@
+# Rendered by the nginx image entrypoint (envsubst) into /etc/nginx/conf.d/reader.conf.
+# Only ${KAVITA_API_KEY} ${LL_API_KEY} ${SR_COUCH_USER_B64} are substituted (see README.md);
+# every other $variable below is nginx's own.
+
+map $arg_cmd $ll_cmd_allowed {
+  default 0;
+  findBook 1;
+  addBook 1;
+  queueBook 1;
+  getWanted 1;
+}
+
+server {
+  listen 80;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Kavita: only the plugin login gets the key, and the client cannot change the query.
+  location = /api/kavita/api/plugin/authenticate {
+    proxy_pass http://kavita:5000/api/plugin/authenticate?apiKey=${KAVITA_API_KEY}&pluginName=speedreader;
+    proxy_set_header Host $host;
+  }
+
+  # Other Kavita calls pass the client's Authorization (Bearer JWT) header through.
+  location /api/kavita/ {
+    proxy_pass http://kavita:5000/;
+    proxy_set_header Host $host;
+    proxy_set_header Authorization $http_authorization;
+    client_max_body_size 1m;
+  }
+
+  # LazyLibrarian: allow-listed cmd only; args are rebuilt so the client cannot pass its own apikey.
+  location /api/ll/ {
+    if ($ll_cmd_allowed = 0) {
+      return 403;
+    }
+    set $args "cmd=$arg_cmd&name=$arg_name&id=$arg_id&type=$arg_type&apikey=${LL_API_KEY}";
+    rewrite ^/api/ll/(.*)$ /$1 break;
+    proxy_pass http://lazylibrarian:5299;
+    proxy_set_header Host $host;
+  }
+
+  # CouchDB: fixed database, basic auth added here, only GET/POST/PUT.
+  location /api/sync/ {
+    limit_except GET POST PUT {
+      deny all;
+    }
+    proxy_pass http://couchdb:5984/speedreader/;
+    proxy_set_header Host $host;
+    proxy_set_header Authorization "Basic ${SR_COUCH_USER_B64}";
+  }
+
+  location /api/ {
+    return 404;
+  }
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
