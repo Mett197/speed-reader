@@ -303,6 +303,12 @@ export default function AppV2() {
           word={display} orpIndex={getORPIndex(display)} fontScale={settings.fontScale}
           wpm={settings.wpm} showWpmBubble={dragging} {...gestures}
         />
+        {book && (
+          <div className="app2-info">
+            <span className="app2-title">{book.title}</span>
+            <span>{(index + 1).toLocaleString()} / {words.length.toLocaleString()} ({Math.floor((index / Math.max(1, words.length)) * 100)}%)</span>
+          </div>
+        )}
         {!book && (
           <div className="app2-empty">
             <p>{busy || "Open the menu to pick a book."}</p>
