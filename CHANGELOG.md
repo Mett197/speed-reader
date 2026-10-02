@@ -1,3 +1,6 @@
+### 2026-10-02: unreleased
+
+* Add fake-indexeddb for sync tests
 ### 2026-09-20: 1.4.0-mett
 
 * Add a library to store and browse every imported EPUB or TXT file
