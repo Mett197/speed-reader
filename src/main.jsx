@@ -7,8 +7,9 @@ import "./index.css";
 // ?old=1 opens the original reader for comparison.
 const useOld = new URLSearchParams(window.location.search).has("old");
 
-if (!useOld && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+// Remove the service worker an earlier v2 build installed.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(

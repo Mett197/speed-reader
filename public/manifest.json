@@ -1,6 +1,4 @@
 {
-  "id": "/",
-  "scope": "/",
   "name": "Speed reader",
   "short_name": "Speed reader",
   "description": "A web-based speed reading tool using RSVP with ORP alignment",
