@@ -68,6 +68,7 @@ export default function AppV2() {
     setBooks(all.filter((b) => !b.mergedInto).map((b) => ({
       ...b,
       offline: cached.has(b.id),
+      cover: b.kavitaSeriesId ? `/api/cover/${b.kavitaSeriesId}` : b.cover,
     })));
   }, []);
 
