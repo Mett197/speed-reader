@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Library, Minus, Plus, BookOpen, Eye, EyeOff, Settings, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Library, ListTree, Minus, Plus, BookOpen, Eye, EyeOff, Settings, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import BookStage from "./ui/BookStage.jsx";
 import LibraryScreen from "./ui/LibraryScreen.jsx";
 import { attachGestures } from "./reader/gestureLayer.js";
@@ -23,6 +23,8 @@ import { createKavitaReporter } from "./sync/kavitaProgress.js";
 import { llSearch, llAddAndQueue, llWanted } from "./api/lazylibrarian.js";
 
 const reporter = createKavitaReporter();
+// Bump when parseEpub's chapters/spine change so cached server books are re-read once.
+const PARSER = 2;
 
 const ENDS_SENTENCE = /[.!?…]["'”’)\]»]*$/;
 
@@ -61,6 +63,7 @@ export default function AppV2() {
   const session = useRef(null);
   const dragStart = useRef({ wpm: 300 });
   const scrub = useRef({ idx: 0, was: false });
+  const trav = useRef(null);
   const spineRef = useRef([]);
   const indexRef = useRef(0);
   indexRef.current = index;
@@ -75,6 +78,7 @@ export default function AppV2() {
   }, []);
 
   const starts = useMemo(() => getSentenceStarts(words), [words]);
+  const sortedChapters = useMemo(() => [...chapters].filter((c) => Number.isFinite(c.wordIndex)).sort((a, b) => a.wordIndex - b.wordIndex), [chapters]);
 
   // ---- boot ----
   useEffect(() => {
@@ -249,10 +253,14 @@ export default function AppV2() {
     setBusy("Opening…");
     try {
       let rec = await getText(meta.id);
-      if ((!rec || !rec.spine?.length) && meta.source === "kavita") {
-        const parsed = await parseEpub(await kavitaFetchEpub(meta.kavitaChapterId));
-        await saveText(meta.id, parsed.text, parsed.chapters, parsed.spine);
-        rec = { text: parsed.text, chapters: parsed.chapters, spine: parsed.spine };
+      if ((!rec || !rec.spine?.length || (rec.parser || 0) < PARSER) && meta.source === "kavita" && navigator.onLine) {
+        try {
+          const parsed = await parseEpub(await kavitaFetchEpub(meta.kavitaChapterId));
+          await saveText(meta.id, parsed.text, parsed.chapters, parsed.spine, PARSER);
+          rec = { text: parsed.text, chapters: parsed.chapters, spine: parsed.spine };
+        } catch (e) {
+          if (!rec) throw e; // no saved copy to fall back to
+        }
       }
       if (!rec) { setBusy("This book isn't on this device. Import the file here."); return; }
       const p = parseText(rec.text);
@@ -284,7 +292,7 @@ export default function AppV2() {
         text = await file.text();
       }
       const id = hashText(text);
-      await saveText(id, text, chapters, spine);
+      await saveText(id, text, chapters, spine, PARSER);
       const existing = (await store.getBooks()).find((b) => b.id === id);
       const meta = existing ? { ...existing, deleted: false, ...(existing.deleted ? { uploaded: false } : {}) } : { id, title, author, source: "local", totalWords: parseText(text).words.length, wordIndex: 0 };
       if (!existing) await store.saveBook(meta);
@@ -444,6 +452,20 @@ export default function AppV2() {
   };
 
   const pct = words.length ? Math.round((index / words.length) * 100) : 0;
+  let chPos = -1;
+  for (let i = 0; i < sortedChapters.length; i++) if (sortedChapters[i].wordIndex <= index) chPos = i;
+  const chStart = chPos >= 0 ? sortedChapters[chPos].wordIndex : 0;
+  const chEnd = chPos + 1 < sortedChapters.length ? sortedChapters[chPos + 1].wordIndex : words.length;
+  const chTitle = chPos >= 0 ? sortedChapters[chPos].title : "";
+  const traverse = (phase, dy) => {
+    if (phase === "start") {
+      trav.current = { idx: indexRef.current };
+      if (playing) pause();
+      return;
+    }
+    if (trav.current) jump(trav.current.idx - Math.round(dy * 0.35));
+    if (phase === "end") trav.current = null;
+  };
   const view = settings.bookView !== false;
 
   return (
@@ -455,6 +477,11 @@ export default function AppV2() {
             <Library size={16} />
             <span className="text-btn-label">Library</span>
           </button>
+          {chapters.length > 1 && (
+            <button onClick={() => openDrawer("contents")} className="icon-btn" title="Chapters">
+              <ListTree size={18} />
+            </button>
+          )}
           <button onClick={() => openDrawer("search")} className="icon-btn" title="Search">
             <Search size={18} />
           </button>
@@ -488,6 +515,10 @@ export default function AppV2() {
         words={words} currentIndex={index} display={display} orpIdx={getORPIndex(display)}
         sideOpacity={settings.sideOpacity ?? 0.5} paragraphBreaks={breaks}
         overlayHidden={!!settings.overlayHidden} bookView={view}
+        chapterStart={chStart} chapterEnd={chEnd} chapterTitle={chTitle}
+        onWordTap={(i) => { if (!blocked()) { if (playing) pause(); jump(i); } }}
+        onFocusTap={() => { if (!blocked()) togglePlay(); }}
+        onTraverse={(ph, dy) => { if (!blocked() || ph !== "start") traverse(ph, dy); }}
       />
 
       {dragging && <div className="app2-wpm-bubble mono">{settings.wpm}<small> wpm</small></div>}
@@ -519,7 +550,7 @@ export default function AppV2() {
         </div>
         <div className="progress-row">
           <button className="progress-text app2-pos" onClick={() => { setGotoPage(String(pageOf(index))); setGotoWord(String(index + 1)); setGoto(true); }}>
-            {words.length ? `${(index + 1).toLocaleString()} / ${words.length.toLocaleString()} (${pct}%) · page ${pageOf(index)}/${pageCount(words.length)}` : ""}
+            {words.length ? `${chTitle ? chTitle + " · " : ""}${(index + 1).toLocaleString()} / ${words.length.toLocaleString()} (${pct}%) · page ${pageOf(index)}/${pageCount(words.length)}` : ""}
           </button>
         </div>
 

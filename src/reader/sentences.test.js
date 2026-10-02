@@ -28,7 +28,8 @@ describe("getSentenceStarts", () => {
 describe("prev/next sentence start", () => {
   const s = [0, 5, 9, 20];
   it("prev goes to current start or previous start", () => {
-    expect(prevSentenceStart(s, 7)).toBe(5);
+    expect(prevSentenceStart(s, 7)).toBe(0); // 2 words in: previous sentence
+    expect(prevSentenceStart(s, 8)).toBe(5); // 3 words in: start of this one
     expect(prevSentenceStart(s, 9)).toBe(5);
     expect(prevSentenceStart(s, 25)).toBe(20);
     expect(prevSentenceStart(s, 20)).toBe(9);

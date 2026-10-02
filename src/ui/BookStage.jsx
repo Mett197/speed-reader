@@ -1,16 +1,17 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 
-// The original reader's book view: dimmed book text behind, focus word in front.
-// Gestures are handled by the page-wide layer, so this has no drag handlers.
+// The original reader's book view: dimmed text of the current chapter behind, focus word in front.
+// Sides of the screen belong to the page-wide gesture layer; the middle zone here
+// traverses the text on vertical drag and jumps to a tapped word.
 
-function joinWordsWithBreaks(words, startIdx, endIdx, breaks) {
-  const parts = [];
+// Window of words as spans (data-i = word index) so a tap can find its word.
+function wordSpans(words, startIdx, endIdx, breaks) {
+  const out = [];
   for (let i = startIdx; i < endIdx; i++) {
-    if (i > startIdx && breaks.has(i)) parts.push("\n\n");
-    else if (i > startIdx) parts.push(" ");
-    parts.push(words[i]);
+    if (i > startIdx) out.push(breaks.has(i) ? "\n\n" : " ");
+    out.push(<span key={i} data-i={i}>{words[i]}</span>);
   }
-  return parts.join("");
+  return out;
 }
 
 function FocusWord({ display, orpIdx, sideOpacity, fit, guide = "bv" }) {
@@ -74,38 +75,72 @@ function useStageCh(ref) {
   return ch;
 }
 
-const BookStage = memo(function BookStage({ words, currentIndex, display, orpIdx, sideOpacity, paragraphBreaks, overlayHidden, bookView }) {
+const BookStage = memo(function BookStage({
+  words, currentIndex, display, orpIdx, sideOpacity, paragraphBreaks, overlayHidden, bookView,
+  chapterStart = 0, chapterEnd, chapterTitle, onWordTap, onFocusTap, onTraverse,
+}) {
   const stageRef = useRef(null);
   const bgContainerRef = useRef(null);
   const bgTextRef = useRef(null);
-  const markerRef = useRef(null);
-  const bgWindowRef = useRef({ start: 0, end: 0 });
+  const bgWindowRef = useRef({ start: 0, end: 0, chapterStart: -1 });
+  const zone = useRef(null);
   const stageCh = useStageCh(stageRef);
   const fit = fitFor(display, orpIdx, stageCh.current);
 
+  const end = chapterEnd ?? words.length;
   const bgHalf = 500;
   const bgBuffer = 100;
   const prev = bgWindowRef.current;
   let bgStart = prev.start;
   let bgEnd = prev.end;
-  if (currentIndex - bgStart < bgBuffer || bgEnd - currentIndex < bgBuffer || prev.start === prev.end) {
-    bgStart = Math.max(0, currentIndex - bgHalf);
-    bgEnd = Math.min(words.length, currentIndex + bgHalf);
-    bgWindowRef.current = { start: bgStart, end: bgEnd };
+  const outside = currentIndex < bgStart || currentIndex >= bgEnd;
+  const nearEdge = (currentIndex - bgStart < bgBuffer && bgStart > chapterStart) || (bgEnd - currentIndex < bgBuffer && bgEnd < end);
+  if (outside || nearEdge || prev.chapterStart !== chapterStart || bgEnd > end) {
+    bgStart = Math.max(chapterStart, currentIndex - bgHalf);
+    bgEnd = Math.min(end, currentIndex + bgHalf);
+    bgWindowRef.current = { start: bgStart, end: bgEnd, chapterStart };
   }
-  const past = useMemo(() => joinWordsWithBreaks(words, bgStart, currentIndex, paragraphBreaks), [words, bgStart, currentIndex, paragraphBreaks]);
-  const future = useMemo(() => joinWordsWithBreaks(words, currentIndex + 1, bgEnd, paragraphBreaks), [words, currentIndex, bgEnd, paragraphBreaks]);
-  const activeWord = words[currentIndex] || "";
+  const spans = useMemo(() => wordSpans(words, bgStart, bgEnd, paragraphBreaks), [words, bgStart, bgEnd, paragraphBreaks]);
 
+  // Highlight the active word and keep it at 30% height without re-rendering the text.
   useEffect(() => {
-    if (!bookView) return;
-    if (markerRef.current && bgTextRef.current && bgContainerRef.current) {
-      const containerH = bgContainerRef.current.clientHeight;
-      const markerTop = markerRef.current.offsetTop - bgTextRef.current.offsetTop;
-      const offset = containerH * 0.3 - markerTop - markerRef.current.offsetHeight / 2;
-      bgTextRef.current.style.transform = `translateY(${offset}px)`;
-    }
-  }, [currentIndex, bookView]);
+    if (!bookView || !bgTextRef.current || !bgContainerRef.current) return;
+    const old = bgTextRef.current.querySelector(".bv-bg-active-word");
+    if (old) old.classList.remove("bv-bg-active-word");
+    const el = bgTextRef.current.querySelector(`[data-i="${currentIndex}"]`);
+    if (!el) return;
+    el.classList.add("bv-bg-active-word");
+    const containerH = bgContainerRef.current.clientHeight;
+    const offset = containerH * 0.3 - el.offsetTop - el.offsetHeight / 2;
+    bgTextRef.current.style.transform = `translateY(${offset}px)`;
+  }, [currentIndex, bookView, spans]);
+
+  const onDown = (e) => {
+    zone.current = { id: e.pointerId, y: e.clientY, drag: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+  };
+  const onMove = (e) => {
+    const z = zone.current;
+    if (!z || z.id !== e.pointerId) return;
+    const dy = e.clientY - z.y;
+    if (!z.drag && Math.abs(dy) > 8) { z.drag = true; onTraverse && onTraverse("start", 0); }
+    if (z.drag) onTraverse && onTraverse("move", dy);
+  };
+  const onUp = (e) => {
+    const z = zone.current;
+    zone.current = null;
+    if (!z || z.id !== e.pointerId) return;
+    if (z.drag) { onTraverse && onTraverse("end", e.clientY - z.y); return; }
+    const hits = document.elementsFromPoint(e.clientX, e.clientY);
+    if (hits.some((h) => h.closest && h.closest(".bv-word-display"))) { onFocusTap && onFocusTap(); return; }
+    const w = hits.find((h) => h.dataset && h.dataset.i != null);
+    if (w) onWordTap && onWordTap(Number(w.dataset.i));
+    else onFocusTap && onFocusTap();
+  };
+  const onCancel = () => {
+    if (zone.current?.drag) onTraverse && onTraverse("end", 0);
+    zone.current = null;
+  };
 
   if (!bookView) {
     return (
@@ -119,11 +154,8 @@ const BookStage = memo(function BookStage({ words, currentIndex, display, orpIdx
     <div className="bv-outer" ref={stageRef}>
       <div ref={bgContainerRef} className="bv-bg">
         <div ref={bgTextRef} className="bv-bg-text">
-          {past}
-          {past ? (paragraphBreaks.has(currentIndex) ? "\n\n" : " ") : ""}
-          <span ref={markerRef} className="bv-bg-active-word">{activeWord}</span>
-          {paragraphBreaks.has(currentIndex + 1) ? "\n\n" : " "}
-          {future}
+          {bgStart === chapterStart && chapterTitle && <div className="bv-chapter-title">{chapterTitle}</div>}
+          {spans}
         </div>
       </div>
       <div className="flex-spacer" />
@@ -133,6 +165,10 @@ const BookStage = memo(function BookStage({ words, currentIndex, display, orpIdx
         </div>
       )}
       <div className="flex-spacer" />
+      <div
+        className="bv-text-zone" data-no-gesture
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel}
+      />
     </div>
   );
 });

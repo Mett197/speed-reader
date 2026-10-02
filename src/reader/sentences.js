@@ -44,11 +44,13 @@ function upper(a, x) {
   return lo;
 }
 
-export function prevSentenceStart(starts, index) {
+// Within the first `grace` words of a sentence, go to the previous sentence
+// (like a music player's back button), otherwise to the start of this one.
+export function prevSentenceStart(starts, index, grace = 3) {
   if (!starts.length) return 0;
   const p = upper(starts, index) - 1; // last start <= index
   if (p < 0) return starts[0];
-  if (starts[p] === index) return starts[Math.max(0, p - 1)];
+  if (index - starts[p] < grace) return starts[Math.max(0, p - 1)];
   return starts[p];
 }
 

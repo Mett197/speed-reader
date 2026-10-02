@@ -111,6 +111,7 @@ export async function parseEpub(file) {
   const chapters = [];
   const spine = [];
   let chapterIndex = 0;
+  const startByPath = {};
   for (const { href, page } of contentFiles) {
     const filePath = href.startsWith("/") ? href.slice(1) : opfDir + href;
     const content = await zip.file(filePath)?.async("text");
@@ -149,13 +150,66 @@ export async function parseEpub(file) {
           });
         }
         spine.push({ page, startIndex: runningWordCount });
+        if (!(filePath in startByPath)) startByPath[filePath] = runningWordCount;
         runningWordCount += wordsInChapter;
         fullText += textContent + " ";
       }
     }
   }
 
-  return { text: fullText.trim(), metadata, chapters, spine };
+  const toc = await readToc(zip, opfContent, opfDir, startByPath);
+  return { text: fullText.trim(), metadata, chapters: toc.length >= 2 ? toc : chapters, spine };
+}
+
+// Resolve "a/b/../c.xhtml#x" against a base directory into a zip path without the fragment.
+function resolvePath(baseDir, href) {
+  const clean = decodeURIComponent(href.split("#")[0]);
+  const parts = (clean.startsWith("/") ? clean.slice(1) : baseDir + clean).split("/");
+  const out = [];
+  for (const part of parts) {
+    if (part === "..") out.pop();
+    else if (part && part !== ".") out.push(part);
+  }
+  return out.join("/");
+}
+
+// Chapter list from the book's own table of contents (EPUB 3 nav, else EPUB 2 NCX),
+// mapped to word offsets; one entry per content file, in reading order.
+async function readToc(zip, opfContent, opfDir, startByPath) {
+  const entries = [];
+  const navHref = opfContent.match(/<item[^>]*properties="[^"]*\bnav\b[^"]*"[^>]*href="([^"]+)"/i)?.[1]
+    || opfContent.match(/<item[^>]*href="([^"]+)"[^>]*properties="[^"]*\bnav\b[^"]*"/i)?.[1];
+  if (navHref) {
+    const navPath = resolvePath(opfDir, navHref);
+    const navDir = navPath.slice(0, navPath.lastIndexOf("/") + 1);
+    const nav = await zip.file(navPath)?.async("text");
+    const tocBlock = nav?.match(/<nav[^>]*epub:type="toc"[^>]*>([\s\S]*?)<\/nav>/i)?.[1] || "";
+    for (const m of tocBlock.matchAll(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+      entries.push({ path: resolvePath(navDir, m[1]), title: m[2] });
+    }
+  }
+  if (!entries.length) {
+    const ncxHref = opfContent.match(/<item[^>]*media-type="application\/x-dtbncx\+xml"[^>]*href="([^"]+)"/i)?.[1]
+      || opfContent.match(/<item[^>]*href="([^"]+)"[^>]*media-type="application\/x-dtbncx\+xml"/i)?.[1];
+    if (ncxHref) {
+      const ncxPath = resolvePath(opfDir, ncxHref);
+      const ncxDir = ncxPath.slice(0, ncxPath.lastIndexOf("/") + 1);
+      const ncx = await zip.file(ncxPath)?.async("text");
+      for (const m of (ncx || "").matchAll(/<navPoint[\s\S]*?<text>([\s\S]*?)<\/text>[\s\S]*?<content[^>]*src="([^"]+)"/gi)) {
+        entries.push({ path: resolvePath(ncxDir, m[2]), title: m[1] });
+      }
+    }
+  }
+  const seen = new Set();
+  const out = [];
+  for (const e of entries) {
+    const start = startByPath[e.path];
+    if (start == null || seen.has(e.path)) continue;
+    seen.add(e.path);
+    const title = e.title.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n)).replace(/\s+/g, " ").trim();
+    out.push({ title: title || `Chapter ${out.length + 1}`, startIndex: start });
+  }
+  return out.sort((a, b) => a.startIndex - b.startIndex);
 }
 
 // Parse text into words and paragraph break positions

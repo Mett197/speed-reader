@@ -17,11 +17,12 @@ function openDb() {
   return dbPromise;
 }
 
-export async function saveText(id, text, chapters = [], spine = []) {
+// parser: version of parseEpub that produced chapters/spine (bump to refresh cached books).
+export async function saveText(id, text, chapters = [], spine = [], parser = 0) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, "readwrite");
-    t.objectStore(STORE).put({ id, text, chapters, spine });
+    t.objectStore(STORE).put({ id, text, chapters, spine, parser });
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
   });
