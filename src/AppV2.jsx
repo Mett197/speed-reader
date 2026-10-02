@@ -348,20 +348,19 @@ export default function AppV2() {
             className="app2-goto" onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
-              const form = new FormData(e.target);
-              const w = form.get("word"), p = form.get("page");
-              jump(e.nativeEvent.submitter?.name === "page-go" ? pageStart(p, words.length) : wordToIndex(w, words.length));
+              jump(wordToIndex(gotoWord, words.length));
               setGoto(false);
             }}
           >
             <label>Page (1-{pageCount(words.length)})
-              <span><input name="page" type="number" inputMode="numeric" min="1" max={pageCount(words.length)} value={gotoPage} onChange={(e) => setGotoPage(e.target.value)} autoFocus />
-              <button name="page-go" type="submit">Go</button></span>
+              <span><input name="page" type="number" inputMode="numeric" min="1" max={pageCount(words.length)} value={gotoPage} onChange={(e) => { setGotoPage(e.target.value); setGotoWord(String(pageStart(e.target.value, words.length) + 1)); }} autoFocus />
+              </span>
             </label>
             <label>Word (1-{words.length.toLocaleString()})
-              <span><input name="word" type="number" inputMode="numeric" min="1" max={words.length} value={gotoWord} onChange={(e) => setGotoWord(e.target.value)} />
-              <button name="word-go" type="submit">Go</button></span>
+              <span><input name="word" type="number" inputMode="numeric" min="1" max={words.length} value={gotoWord} onChange={(e) => { setGotoWord(e.target.value); setGotoPage(String(pageOf(wordToIndex(e.target.value, words.length)))); }} />
+              </span>
             </label>
+            <button type="submit">Go</button>
             <small>A page is {WORDS_PER_PAGE} words.</small>
           </form>
         </div>
