@@ -52,6 +52,32 @@ server {
     proxy_set_header Authorization "Basic ${SR_COUCH_USER_B64}";
   }
 
+  # Kavita series cover, key added here (Kavita images authenticate by apiKey query).
+  location ~ ^/api/cover/([0-9]+)$ {
+    resolver 127.0.0.11 valid=30s;
+    set $kavita_up kavita:5000;
+    proxy_pass http://$kavita_up/api/image/series-cover?seriesId=$1&apiKey=${KAVITA_API_KEY};
+    proxy_set_header Host $host;
+    expires 7d;
+  }
+
+  # Device uploads into the shared ebooks root (same root as LazyLibrarian and Kavita).
+  # PUT /api/upload/<Author>/<Title>/<Title>.epub ; never overwrites an existing file.
+  location /api/upload/ {
+    limit_except PUT {
+      deny all;
+    }
+    alias /ebooks/;
+    if (-e $request_filename) {
+      return 409;
+    }
+    dav_methods PUT;
+    create_full_put_path on;
+    dav_access user:rw group:rw all:r;
+    client_max_body_size 200m;
+    client_body_temp_path /ebooks/.speedreader-tmp;
+  }
+
   location /api/ {
     return 404;
   }

@@ -16,6 +16,9 @@ import { saveText, getText, hashText, cachedIds } from "./lib/texts.js";
 import * as store from "./sync/store.js";
 import { startAutoSync, debouncedSaveProgress } from "./sync/couch.js";
 import { kavitaListBooks, kavitaFetchEpub } from "./api/kavita.js";
+import { makeEpub } from "./lib/makeEpub.js";
+import { readOldLibrary } from "./lib/oldLibrary.js";
+import { uploadBook } from "./api/upload.js";
 import { createKavitaReporter } from "./sync/kavitaProgress.js";
 import { llSearch, llAddAndQueue } from "./api/lazylibrarian.js";
 
@@ -62,7 +65,7 @@ export default function AppV2() {
 
   const loadBooks = useCallback(async () => {
     const [all, cached] = await Promise.all([store.getBooks(), cachedIds().catch(() => new Set())]);
-    setBooks(all.map((b) => ({
+    setBooks(all.filter((b) => !b.mergedInto).map((b) => ({
       ...b,
       offline: cached.has(b.id),
     })));
@@ -77,7 +80,7 @@ export default function AppV2() {
       setSettings(saved.themeChosen ? saved : { ...saved, theme: "classic" });
       await loadBooks();
       const stop = startAutoSync();
-      refreshKavita();
+      refreshKavita().then(pushLocalBooks).then(() => refreshKavita());
       return stop;
     })();
   }, []);
@@ -97,11 +100,57 @@ export default function AppV2() {
           await store.saveBook({ ...old, kavitaLibraryId: b.kavitaLibraryId, kavitaVolumeId: b.kavitaVolumeId ?? old.kavitaVolumeId, kavitaSeriesId: b.kavitaSeriesId ?? old.kavitaSeriesId });
         }
       }
+      await mergeUploaded(found);
       await loadBooks();
       return found;
     } catch {
       return [];
     }
+  }
+
+
+  const norm = (t) => String(t || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+  // Local books that were uploaded: once Kavita lists the same title, move progress
+  // and the cached text over and hide the local copy.
+  async function mergeUploaded(found) {
+    const all = await store.getBooks();
+    for (const local of all.filter((b) => b.source === "local" && b.uploaded && !b.mergedInto)) {
+      const k = found.find((f) => norm(f.title) === norm(local.title));
+      if (!k) continue;
+      const kb = all.find((b) => b.id === k.id) || { ...k, wordIndex: 0 };
+      if ((local.wordIndex || 0) > (kb.wordIndex || 0)) await store.saveBook({ ...kb, wordIndex: local.wordIndex });
+      const rec = await getText(local.id);
+      if (rec && !(await getText(k.id))) await saveText(k.id, rec.text, rec.chapters || [], []);
+      await store.saveBook({ ...local, mergedInto: k.id });
+    }
+  }
+
+  // Send books that only exist on this device (new imports and the original app's
+  // library) to the server library. Safe to rerun: the server refuses overwrites (409).
+  async function pushLocalBooks() {
+    if (!navigator.onLine) return;
+    let all = await store.getBooks();
+    for (const o of await readOldLibrary().catch(() => [])) {
+      const id = hashText(o.text);
+      if (all.some((b) => b.id === id)) continue;
+      await saveText(id, o.text, o.chapters || []);
+      await store.saveBook({
+        id, title: o.title || "Untitled", author: o.author || "", source: "local",
+        totalWords: parseText(o.text).words.length, wordIndex: o.wordIndex || 0,
+      });
+    }
+    all = await store.getBooks();
+    for (const b of all.filter((x) => x.source === "local" && !x.uploaded && !x.mergedInto)) {
+      const rec = await getText(b.id);
+      if (!rec) continue;
+      try {
+        const blob = await makeEpub({ title: b.title, author: b.author, text: rec.text, chapters: rec.chapters || [] });
+        await uploadBook(blob, b);
+        await store.saveBook({ ...b, uploaded: true });
+      } catch { /* offline or upload not available: retried next start */ }
+    }
+    await loadBooks();
   }
 
   // ---- sessions (stats) ----
@@ -234,6 +283,18 @@ export default function AppV2() {
       if (!existing) await store.saveBook(meta);
       await loadBooks();
       await openBook(meta);
+      if (!meta.uploaded) {
+        try {
+          const blob = /\.epub$/i.test(file.name) ? file : await makeEpub({ title, author, text, chapters });
+          const r = await uploadBook(blob, { title, author });
+          await store.saveBook({ ...meta, uploaded: true });
+          setBusy(r === "exists" ? "Already in your server library." : "Added to your server library.");
+          setTimeout(() => setBusy(""), 3000);
+          refreshKavita();
+        } catch (e) {
+          setBusy(`Saved on this device only: ${e.message}`);
+        }
+      }
     } catch (e) {
       setBusy(`Import failed: ${e.message}`);
     }

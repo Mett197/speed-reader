@@ -115,3 +115,11 @@ export async function kavitaSaveProgress(ids, pageNum) {
     pageNum,
   });
 }
+
+// Ask Kavita to rescan every library (after an upload). Admin JWT required.
+export async function kavitaScanLibraries() {
+  const libs = await (await authedFetch("/api/library/libraries")).json();
+  for (const l of Array.isArray(libs) ? libs : []) {
+    await authedFetch(`/api/library/scan?libraryId=${l.id}`, { method: "POST" });
+  }
+}
