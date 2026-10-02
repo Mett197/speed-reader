@@ -5,7 +5,7 @@ const STORES = ["books", "bookmarks", "sessions", "settings"];
 
 export const DEFAULT_SETTINGS = {
   wpm: 300,
-  theme: "dark",
+  theme: "classic",
   autoNight: true,
   chunkSize: 1,
   pauseEverySentences: 0,

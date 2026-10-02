@@ -28,7 +28,7 @@ function effectiveTheme(s) {
     return { bg: s.custom.bg, fg: s.custom.fg, accent: s.custom.accent || "#c0271a" };
   }
   if (s.autoNight && isNight() && (s.theme === "light" || s.theme === "sepia")) return "night";
-  return THEMES[s.theme] ? s.theme : "dark";
+  return THEMES[s.theme] ? s.theme : "classic";
 }
 
 export default function AppV2() {
@@ -73,7 +73,8 @@ export default function AppV2() {
   // ---- boot ----
   useEffect(() => {
     (async () => {
-      setSettings(await store.getSettings());
+      const saved = await store.getSettings();
+      setSettings(saved.themeChosen ? saved : { ...saved, theme: "classic" });
       await loadBooks();
       const stop = startAutoSync();
       refreshKavita();
@@ -259,7 +260,7 @@ export default function AppV2() {
     setBookmarks((await store.getBookmarks(book.id)).filter((b) => !b.deleted));
   };
   const changeSettings = async (partial) => {
-    const next = { ...settings, ...partial };
+    const next = { ...settings, ...partial, ...("theme" in partial ? { themeChosen: true } : {}) };
     setSettings(next);
     await store.saveSettings(next);
   };

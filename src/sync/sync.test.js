@@ -17,10 +17,10 @@ afterEach(() => vi.useRealTimers());
 
 describe("store", () => {
   it("defaults settings and saves", async () => {
-    expect(await store.getSettings()).toEqual({ wpm: 300, theme: "dark", autoNight: true, chunkSize: 1, pauseEverySentences: 0, fontScale: 1 });
+    expect(await store.getSettings()).toEqual({ wpm: 300, theme: "classic", autoNight: true, chunkSize: 1, pauseEverySentences: 0, fontScale: 1 });
     await store.saveSettings({ wpm: 500 });
     expect((await store.getSettings()).wpm).toBe(500);
-    expect((await store.getSettings()).theme).toBe("dark");
+    expect((await store.getSettings()).theme).toBe("classic");
   });
 
   it("saves books and progress with updatedAt", async () => {
