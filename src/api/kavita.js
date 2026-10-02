@@ -82,6 +82,7 @@ export async function kavitaListBooks(query = "") {
           wordIndex: 0,
           updatedAt: 0,
           source: "kavita",
+          kavitaLibraryId: s.libraryId,
           kavitaSeriesId: s.id,
           kavitaVolumeId: v.id,
           kavitaChapterId: c.id,
@@ -103,6 +104,7 @@ export async function kavitaSaveProgress(ids, pageNum) {
     volumeId: ids.volumeId,
     chapterId: ids.chapterId,
     libraryId: ids.libraryId ?? 0,
+    ...(ids.bookScrollId ? { bookScrollId: ids.bookScrollId } : {}),
     pageNum,
   });
 }

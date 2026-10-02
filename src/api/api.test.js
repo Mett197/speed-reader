@@ -32,14 +32,14 @@ describe("kavita", () => {
       if (u.includes("/series/v2")) {
         const body = JSON.parse(init.body);
         expect(body.statements.some((s) => s.field === 1 && s.value === "dune")).toBe(true);
-        return json([{ id: 1, name: "Dune", format: 3 }, { id: 2, name: "Comic", format: 1 }]);
+        return json([{ id: 1, libraryId: 5, name: "Dune", format: 3 }, { id: 2, name: "Comic", format: 1 }]);
       }
       if (u.includes("seriesId=1")) return json([{ id: 10, chapters: [{ id: 100 }] }]);
       throw new Error("unexpected " + u);
     });
     const books = await kavitaListBooks("dune");
     expect(books).toHaveLength(1);
-    expect(books[0]).toMatchObject({ id: "k:100", title: "Dune", source: "kavita", kavitaSeriesId: 1, kavitaVolumeId: 10, kavitaChapterId: 100 });
+    expect(books[0]).toMatchObject({ id: "k:100", title: "Dune", source: "kavita", kavitaLibraryId: 5, kavitaSeriesId: 1, kavitaVolumeId: 10, kavitaChapterId: 100 });
   });
 
   it("saves progress", async () => {
