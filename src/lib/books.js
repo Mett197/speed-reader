@@ -91,22 +91,27 @@ export async function parseEpub(file) {
   });
 
   // Get ordered content files
-  const contentFiles = spineMatches.map((m) => manifest[m[1]]).filter(Boolean);
+  // page = index among the spine itemrefs, which is how Kavita counts book pages
+  // (its reading order index); unresolved itemrefs still occupy an index.
+  const contentFiles = spineMatches
+    .map((m, i) => ({ href: manifest[m[1]], page: i }))
+    .filter((c) => c.href);
 
   // If spine parsing failed, try to get all xhtml files
   if (contentFiles.length === 0) {
     const allFiles = Object.keys(zip.files).filter(
       (f) => f.endsWith(".xhtml") || f.endsWith(".html") || f.endsWith(".htm"),
     );
-    contentFiles.push(...allFiles);
+    allFiles.forEach((f, i) => contentFiles.push({ href: f, page: i }));
   }
 
   // Extract text from each content file, tracking chapter boundaries
   let fullText = "";
   let runningWordCount = 0;
   const chapters = [];
+  const spine = [];
   let chapterIndex = 0;
-  for (const href of contentFiles) {
+  for (const { href, page } of contentFiles) {
     const filePath = href.startsWith("/") ? href.slice(1) : opfDir + href;
     const content = await zip.file(filePath)?.async("text");
     if (content) {
@@ -143,13 +148,14 @@ export async function parseEpub(file) {
             startIndex: runningWordCount,
           });
         }
+        spine.push({ page, startIndex: runningWordCount });
         runningWordCount += wordsInChapter;
         fullText += textContent + " ";
       }
     }
   }
 
-  return { text: fullText.trim(), metadata, chapters };
+  return { text: fullText.trim(), metadata, chapters, spine };
 }
 
 // Parse text into words and paragraph break positions

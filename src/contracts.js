@@ -10,6 +10,7 @@
  * @property {number} wordIndex   current position
  * @property {number} updatedAt   ms epoch, last-write-wins
  * @property {string} [source]    "kavita" | "local"
+ * @property {number} [kavitaLibraryId]
  * @property {number} [kavitaSeriesId]
  * @property {number} [kavitaVolumeId]
  * @property {number} [kavitaChapterId]
