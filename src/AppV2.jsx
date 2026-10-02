@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Menu } from "lucide-react";
-import RsvpBand from "./ui/RsvpBand.jsx";
-import TextPane from "./ui/TextPane.jsx";
-import BottomBar from "./ui/BottomBar.jsx";
+import { Library, Minus, Plus, BookOpen, Eye, EyeOff, Settings, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import BookStage from "./ui/BookStage.jsx";
+import { attachGestures } from "./reader/gestureLayer.js";
 import Drawer from "./ui/Drawer.jsx";
 import "./ui/ui.css";
 import "./app2.css";
@@ -259,7 +258,7 @@ export default function AppV2() {
       setIndex(Math.min(meta.wordIndex || 0, Math.max(0, p.words.length - 1)));
       setSub(0);
       setBookmarks((await store.getBookmarks(meta.id)).filter((b) => !b.deleted));
-      setDrawer(false);
+      closeDrawer();
       setBusy("");
     } catch (e) {
       setBusy(`Could not open: ${e.message}`);
@@ -327,15 +326,22 @@ export default function AppV2() {
     await store.saveSettings(next);
   };
 
+  const containerRef = useRef(null);
+  const closedAt = useRef(0);
+  const closeDrawer = () => { closedAt.current = Date.now(); setDrawer(false); };
+  const blocked = () => drawer || goto || Date.now() - closedAt.current < 450;
+
   const gestures = {
-    onTap: togglePlay,
+    onTap: () => { if (!blocked()) togglePlay(); },
     onWpmDrag: (dy, v, phase) => {
+      if (blocked() && phase === "start") return;
       if (phase === "start") { dragStart.current.wpm = settings.wpm; setDragging(true); }
       const w = dragToWpm(dragStart.current.wpm, dy, v);
       if (phase === "end") { setDragging(false); store.saveSettings({ ...settings, wpm: settings.wpm }); return; }
       setSettings((s) => ({ ...s, wpm: w }));
     },
     onScrub: (dx, phase) => {
+      if (blocked() && phase === "start") return;
       if (phase === "start") {
         scrub.current = { idx: indexRef.current, was: playing };
         if (playing) pause();
@@ -343,8 +349,16 @@ export default function AppV2() {
       if (phase !== "end") jump(scrub.current.idx - swipeToWords(dx));
       else if (scrub.current.was) play();
     },
-    onLongPress: () => toggleBookmark(indexRef.current),
+    onLongPress: () => { if (!blocked()) toggleBookmark(indexRef.current); },
   };
+  const gesturesRef = useRef(gestures);
+  gesturesRef.current = gestures;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const fwd = (name) => (...a) => gesturesRef.current[name]?.(...a);
+    return attachGestures(el, { onTap: fwd("onTap"), onWpmDrag: fwd("onWpmDrag"), onScrub: fwd("onScrub"), onLongPress: fwd("onLongPress") });
+  }, []);
 
   // keyboard
   useEffect(() => {
@@ -356,7 +370,7 @@ export default function AppV2() {
       else if (e.key === "ArrowUp") changeSettings({ wpm: Math.min(1500, settings.wpm + 10) });
       else if (e.key === "ArrowDown") changeSettings({ wpm: Math.max(100, settings.wpm - 10) });
       else if (e.key === "b") toggleBookmark(index);
-      else if (e.key === "Escape") setDrawer(false);
+      else if (e.key === "Escape") closeDrawer();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -370,12 +384,12 @@ export default function AppV2() {
 
   const panels = {
     library: { books, currentId: book?.id, onOpen: openBook, onImport: importFile },
-    contents: { chapters, currentIndex: index, onJump: (i) => { jump(i); setDrawer(false); } },
+    contents: { chapters, currentIndex: index, onJump: (i) => { jump(i); closeDrawer(); } },
     search: {
-      words, onJump: (i) => { jump(i); setDrawer(false); },
+      words, onJump: (i) => { jump(i); closeDrawer(); },
       onFindBook: findBook, onRequestBook: (it) => llAddAndQueue(it.llId), libraryIds,
     },
-    bookmarks: { bookmarks, words, onJump: (i) => { jump(i); setDrawer(false); }, onRemove: (b) => toggleBookmark(b.wordIndex) },
+    bookmarks: { bookmarks, words, onJump: (i) => { jump(i); closeDrawer(); }, onRemove: (b) => toggleBookmark(b.wordIndex) },
     stats: { stats },
     settings: { settings, onChange: changeSettings },
   };
@@ -386,73 +400,122 @@ export default function AppV2() {
     setDrawer(true);
   };
 
+  const pct = words.length ? Math.round((index / words.length) * 100) : 0;
+  const view = settings.bookView !== false;
+
   return (
-    <div className="app2">
-      <button className="app2-menu" aria-label="Menu" onClick={() => openDrawer("library")}><Menu size={22} /></button>
-      <div className="app2-top">
-        <RsvpBand
-          word={display} orpIndex={getORPIndex(display)} fontScale={settings.fontScale}
-          wpm={settings.wpm} showWpmBubble={dragging} {...gestures}
-        />
-        {book && (
-          <div className="app2-info">
-            <span className="app2-title">{book.title}</span>
-            <span>{(index + 1).toLocaleString()} / {words.length.toLocaleString()} ({Math.floor((index / Math.max(1, words.length)) * 100)}%)</span>
-          </div>
-        )}
-        {!book && (
-          <div className="app2-empty">
-            <p>{busy || "Open the menu to pick a book."}</p>
-          </div>
-        )}
-        {book && busy && <div className="app2-toast">{busy}</div>}
-      </div>
-      <div className="app2-bottom">
-        <TextPane
-          words={words} currentIndex={index} onJump={jump} onToggleBookmark={toggleBookmark}
-          bookmarks={bmSet} paragraphBreaks={breaks} playing={playing}
-        />
-      </div>
-      {book && (
-        <div className="app2-pages">
-          <button aria-label="Previous page" onClick={() => jump(pageStart(pageOf(index) - 1, words.length))}>&lsaquo;</button>
-          <button className="app2-pages-go" onClick={() => { setGotoPage(String(pageOf(index))); setGotoWord(String(index + 1)); setGoto(true); }}>
-            Page {pageOf(index)} / {pageCount(words.length)} <span>word {(index + 1).toLocaleString()}</span>
+    <>
+    <div className="container app2-home" ref={containerRef}>
+      <div className="top-bar">
+        <div className="top-left">
+          <button onClick={() => openDrawer("library")} className="text-btn icon-btn" title="Library">
+            <Library size={16} />
+            <span className="text-btn-label">Library</span>
           </button>
-          <button aria-label="Next page" onClick={() => jump(pageStart(pageOf(index) + 1, words.length))}>&rsaquo;</button>
+          <button onClick={() => openDrawer("search")} className="icon-btn" title="Search">
+            <Search size={18} />
+          </button>
         </div>
-      )}
-      <BottomBar
-        playing={playing} onPlayPause={togglePlay}
-        onPrevSentence={() => jump(prevSentenceStart(starts, index))}
-        onNextSentence={() => jump(nextSentenceStart(starts, index))}
-        wpm={settings.wpm} progress={words.length ? index / words.length : 0}
-        onSeek={(f) => jump(Math.round(f * (words.length - 1)))} timeLeftLabel={timeLeftLabel}
+        <div className="top-center">
+          <div className="wpm-control">
+            <button onClick={() => changeSettings({ wpm: Math.max(100, settings.wpm - 25) })} className="wpm-btn"><Minus size={16} /></button>
+            <div className="wpm-display">
+              <span className="wpm-value">{settings.wpm}</span>
+              <span className="wpm-label">WPM</span>
+            </div>
+            <button onClick={() => changeSettings({ wpm: Math.min(1500, settings.wpm + 25) })} className="wpm-btn"><Plus size={16} /></button>
+          </div>
+        </div>
+        <div className="top-right">
+          <button onClick={() => changeSettings({ bookView: !view })} className={`icon-btn${view ? " active" : ""}`} title="Book view">
+            <BookOpen size={18} />
+          </button>
+          {view && (
+            <button onClick={() => changeSettings({ overlayHidden: !settings.overlayHidden })} className={`icon-btn${settings.overlayHidden ? " active" : ""}`} title={settings.overlayHidden ? "Show focus word" : "Hide focus word"}>
+              {settings.overlayHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          )}
+          <button onClick={() => openDrawer("settings")} className="icon-btn" title="Settings">
+            <Settings size={18} />
+          </button>
+        </div>
+      </div>
+
+      <BookStage
+        words={words} currentIndex={index} display={display} orpIdx={getORPIndex(display)}
+        sideOpacity={settings.sideOpacity ?? 0.5} paragraphBreaks={breaks}
+        overlayHidden={!!settings.overlayHidden} bookView={view}
       />
+
+      {dragging && <div className="app2-wpm-bubble mono">{settings.wpm}<small> wpm</small></div>}
+      {busy && <div className="app2-toast">{busy}</div>}
+      {!book && !busy && <div className="app2-toast">Tap Library to pick a book.</div>}
+
+      <div className="bottom-area">
+        <div className="controls-row">
+          <button onClick={() => jump(prevSentenceStart(starts, index))} className="skip-btn" title="Previous sentence">
+            <ChevronLeft size={24} />
+            <ChevronLeft size={24} className="chevron-overlap" />
+          </button>
+          <button onClick={togglePlay} className="play-btn" aria-label={playing ? "Pause" : "Play"}>
+            {playing
+              ? <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
+              : <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>}
+          </button>
+          <button onClick={() => jump(nextSentenceStart(starts, index))} className="skip-btn" title="Next sentence">
+            <ChevronRight size={24} />
+            <ChevronRight size={24} className="chevron-overlap" />
+          </button>
+        </div>
+
+        <div
+          className="progress-container" data-no-gesture
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); jump(Math.round(((e.clientX - r.left) / r.width) * (words.length - 1))); }}
+        >
+          <div className="progress-bar" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="progress-row">
+          <button className="progress-text app2-pos" onClick={() => { setGotoPage(String(pageOf(index))); setGotoWord(String(index + 1)); setGoto(true); }}>
+            {words.length ? `${(index + 1).toLocaleString()} / ${words.length.toLocaleString()} (${pct}%) · page ${pageOf(index)}/${pageCount(words.length)}` : ""}
+          </button>
+        </div>
+
+        {book && (
+          <aside aria-label="Current book" className="book-metadata">
+            {(book.cover || book.kavitaSeriesId) && (
+              <img src={book.cover || `/api/cover/${book.kavitaSeriesId}`} alt="" className="book-cover" />
+            )}
+            <div className="book-info">
+              <h3 className="book-title">{book.title}</h3>
+              {book.author && <p className="book-author">{book.author}</p>}
+              <p className="book-stats">{timeLeftLabel}</p>
+            </div>
+          </aside>
+        )}
+      </div>
+
+    </div>
       {goto && (
-        <div className="app2-goto-scrim" onClick={() => setGoto(false)}>
+        <div className="app2-goto-scrim" data-no-gesture onClick={() => { closedAt.current = Date.now(); setGoto(false); }}>
           <form
             className="app2-goto" onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              jump(wordToIndex(gotoWord, words.length));
-              setGoto(false);
-            }}
+            onSubmit={(e) => { e.preventDefault(); jump(wordToIndex(gotoWord, words.length)); closedAt.current = Date.now(); setGoto(false); }}
           >
             <label>Page (1-{pageCount(words.length)})
-              <span><input name="page" type="number" inputMode="numeric" min="1" max={pageCount(words.length)} value={gotoPage} onChange={(e) => { setGotoPage(e.target.value); setGotoWord(String(pageStart(e.target.value, words.length) + 1)); }} autoFocus />
-              </span>
+              <span><input type="number" inputMode="numeric" min="1" max={pageCount(words.length)} value={gotoPage} autoFocus
+                onChange={(e) => { setGotoPage(e.target.value); setGotoWord(String(pageStart(e.target.value, words.length) + 1)); }} /></span>
             </label>
             <label>Word (1-{words.length.toLocaleString()})
-              <span><input name="word" type="number" inputMode="numeric" min="1" max={words.length} value={gotoWord} onChange={(e) => { setGotoWord(e.target.value); setGotoPage(String(pageOf(wordToIndex(e.target.value, words.length)))); }} />
-              </span>
+              <span><input type="number" inputMode="numeric" min="1" max={words.length} value={gotoWord}
+                onChange={(e) => { setGotoWord(e.target.value); setGotoPage(String(pageOf(wordToIndex(e.target.value, words.length)))); }} /></span>
             </label>
             <button type="submit">Go</button>
             <small>A page is {WORDS_PER_PAGE} words.</small>
           </form>
         </div>
       )}
-      <Drawer open={drawer} onClose={() => setDrawer(false)} tab={tab} onTab={openDrawer} panels={panels} />
-    </div>
+
+      <Drawer open={drawer} onClose={closeDrawer} tab={tab} onTab={openDrawer} panels={panels} />
+    </>
   );
 }

@@ -19,6 +19,8 @@ export function attachGestures(el, handlers = {}) {
 
   function down(e) {
     if (g) return;
+    // Controls, inputs and anything marked data-no-gesture keep their own behaviour.
+    if (e.target.closest && e.target.closest("button, input, select, textarea, a, label, [data-no-gesture]")) return;
     g = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, lock: null, long: false, vy: 0, py: e.clientY, pt: e.timeStamp };
     g.timer = setTimeout(() => {
       if (g && !g.lock) { g.long = true; h.onLongPress && h.onLongPress(); }
