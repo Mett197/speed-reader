@@ -15,6 +15,7 @@
 * Add CouchDB sync, auto sync and debounced progress
 * Add tests for API clients and sync
 * Add nginx config template with key injection
+* Add spine pages to parseEpub and optional spine storage in the text store
 
 ### 2026-09-20: 1.4.0-mett
 

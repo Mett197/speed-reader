@@ -17,11 +17,11 @@ function openDb() {
   return dbPromise;
 }
 
-export async function saveText(id, text, chapters = []) {
+export async function saveText(id, text, chapters = [], spine = []) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, "readwrite");
-    t.objectStore(STORE).put({ id, text, chapters });
+    t.objectStore(STORE).put({ id, text, chapters, spine });
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
   });
