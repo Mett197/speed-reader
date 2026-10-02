@@ -52,3 +52,13 @@ export async function cachedIds() {
     req.onerror = () => reject(req.error);
   });
 }
+
+export async function deleteText(id) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(STORE, "readwrite");
+    t.objectStore(STORE).delete(id);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+}

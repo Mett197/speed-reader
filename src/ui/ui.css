@@ -92,3 +92,13 @@
 .stats dd { margin: 2px 0 0; font-size: 1.2rem; font-weight: 600; }
 .spark { display: flex; align-items: flex-end; gap: 3px; height: 80px; }
 .spark span { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; }
+
+.hint-small { font-size: 0.75rem; color: var(--dim, #626262); margin: 6px 2px 0; }
+.book-menu { margin: 12px 0; padding: 14px; border: 1px solid #262626; border-radius: 14px; background: #141414; display: grid; gap: 10px; }
+.book-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.book-menu .icon-only { background: transparent; border: 0; color: inherit; min-width: 44px; min-height: 44px; cursor: pointer; }
+.book-menu-rename { display: flex; gap: 8px; }
+.book-menu-rename input { flex: 1; min-height: 44px; padding: 0 12px; background: transparent; color: inherit; border: 1px solid #333; border-radius: 10px; font: inherit; }
+.book-menu .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }
+.btn-danger { color: #ff6b6b; }
+.book-main { -webkit-touch-callout: none; user-select: none; }

@@ -11,7 +11,7 @@ import { applyTheme, isNight, THEMES } from "./reader/themes.js";
 import { dragToWpm, swipeToWords } from "./reader/gestures.js";
 import { getSentenceStarts, prevSentenceStart, nextSentenceStart } from "./reader/sentences.js";
 import { parseEpub, parseText } from "./lib/books.js";
-import { saveText, getText, hashText, cachedIds } from "./lib/texts.js";
+import { saveText, getText, hashText, cachedIds, deleteText } from "./lib/texts.js";
 import * as store from "./sync/store.js";
 import { startAutoSync, debouncedSaveProgress } from "./sync/couch.js";
 import { kavitaListBooks, kavitaFetchEpub } from "./api/kavita.js";
@@ -64,7 +64,7 @@ export default function AppV2() {
 
   const loadBooks = useCallback(async () => {
     const [all, cached] = await Promise.all([store.getBooks(), cachedIds().catch(() => new Set())]);
-    setBooks(all.filter((b) => !b.mergedInto).map((b) => ({
+    setBooks(all.filter((b) => !b.mergedInto && !b.deleted).map((b) => ({
       ...b,
       offline: cached.has(b.id),
       cover: b.kavitaSeriesId ? `/api/cover/${b.kavitaSeriesId}` : b.cover,
@@ -283,8 +283,9 @@ export default function AppV2() {
       const id = hashText(text);
       await saveText(id, text, chapters, spine);
       const existing = (await store.getBooks()).find((b) => b.id === id);
-      const meta = existing || { id, title, author, source: "local", totalWords: parseText(text).words.length, wordIndex: 0 };
+      const meta = existing ? { ...existing, deleted: false, ...(existing.deleted ? { uploaded: false } : {}) } : { id, title, author, source: "local", totalWords: parseText(text).words.length, wordIndex: 0 };
       if (!existing) await store.saveBook(meta);
+      else if (existing.deleted) await store.saveBook({ ...existing, deleted: false, uploaded: false });
       await loadBooks();
       await openBook(meta);
       if (!meta.uploaded) {
@@ -387,7 +388,22 @@ export default function AppV2() {
   const libraryIds = useMemo(() => new Set(books.flatMap((b) => [b.id, b.title])), [books]);
 
   const panels = {
-    library: { books, currentId: book?.id, onOpen: openBook, onImport: importFile },
+    library: {
+      books, currentId: book?.id, onOpen: openBook, onImport: importFile,
+      onRename: async (b, title) => {
+        const cur = (await store.getBooks()).find((x) => x.id === b.id);
+        if (cur) await store.saveBook({ ...cur, title });
+        if (book?.id === b.id) setBook((m) => ({ ...m, title }));
+        loadBooks();
+      },
+      onDelete: async (b) => {
+        const cur = (await store.getBooks()).find((x) => x.id === b.id);
+        if (cur) await store.saveBook({ ...cur, deleted: true });
+        await deleteText(b.id).catch(() => {});
+        loadBooks();
+      },
+      onForget: async (b) => { await deleteText(b.id).catch(() => {}); loadBooks(); },
+    },
     contents: { chapters, currentIndex: index, onJump: (i) => { jump(i); closeDrawer(); } },
     search: {
       words, onJump: (i) => { jump(i); closeDrawer(); },
