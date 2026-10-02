@@ -1,12 +1,13 @@
 ### 2026-10-02: unreleased
 
-* Add nginx config template with key injection
-* Add tests for API clients and sync
-* Add CouchDB sync, auto sync and debounced progress
-* Add IndexedDB local store
-* Add LazyLibrarian API client
-* Add Kavita API client
 * Add fake-indexeddb for sync tests
+* Add Kavita API client
+* Add LazyLibrarian API client
+* Add IndexedDB local store
+* Add CouchDB sync, auto sync and debounced progress
+* Add tests for API clients and sync
+* Add nginx config template with key injection
+
 ### 2026-09-20: 1.4.0-mett
 
 * Add a library to store and browse every imported EPUB or TXT file
