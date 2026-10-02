@@ -1,0 +1,28 @@
+html, body, #root { height: 100%; margin: 0; background: var(--bg, #121212); color: var(--fg, #e6e6e6); }
+
+.app2 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app2-top { position: relative; flex: 0 0 38%; min-height: 160px; border-bottom: 1px solid var(--dim); }
+.app2-top .rsvp-band { height: 100%; }
+.app2-bottom { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+.app2-menu {
+  position: absolute; top: calc(env(safe-area-inset-top) + 8px); left: 8px; z-index: 5;
+  width: 44px; height: 44px; display: grid; place-items: center;
+  background: transparent; color: var(--dim); border: 0; border-radius: 12px; cursor: pointer;
+}
+.app2-menu:hover { color: var(--fg); }
+
+.app2-empty, .app2-toast {
+  position: absolute; left: 0; right: 0; bottom: 10px; text-align: center;
+  color: var(--dim); font-size: 0.9rem; pointer-events: none;
+}
