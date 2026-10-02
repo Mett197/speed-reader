@@ -1,5 +1,6 @@
 ### 2026-10-02: Unreleased
 
+* Add RsvpBand, TextPane, BottomBar, Drawer and panels with styles and tests
 * Add word search helper for the UI
 * Add pure reader timing module with word delay, ORP index and long word splitting
 * Add reader themes with WCAG contrast checks and night mode detection
