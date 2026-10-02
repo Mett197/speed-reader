@@ -1,5 +1,6 @@
 ### 2026-10-02: Unreleased
 
+* Add word search helper for the UI
 * Add pure reader timing module with word delay, ORP index and long word splitting
 * Add reader themes with WCAG contrast checks and night mode detection
 * Add progressive drag and swipe gesture curves for WPM and scrubbing
